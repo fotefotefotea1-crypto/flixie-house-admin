@@ -1,0 +1,2031 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Flixie House - Admin Panel & Shop Settings (Cloud Synced)</title>
+    <!-- React & ReactDOM CDN -->
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+    <!-- Babel CDN -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Supabase JS Client CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <!-- Prompt Font -->
+    <link href="https://fonts.googleapis.com/css2?family=Prompt:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        * { box-sizing: border-box; }
+        body { 
+            font-family: 'Prompt', sans-serif;
+            margin: 0; padding: 0;
+            font-size: 12px;
+        }
+        .custom-scrollbar::-webkit-scrollbar { width: 4px; height: 4px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: inherit; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #262626; border-radius: 3px; }
+        table.fixed-table { table-layout: fixed; width: 100%; min-width: 1250px; }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useRef } = React;
+
+        // Supabase Client Setup
+        const SUPABASE_URL = "https://lxnubaczqktakiinplhl.supabase.co";
+        const SUPABASE_ANON_KEY = "sb_publishable_i-CebOKRfmt62mUIlZ94cQ_lInvvH7a";
+        const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+        function App() {
+            const [activeTab, setActiveTab] = useState(() => {
+                return localStorage.getItem('flixie_active_tab_v69') || 'dashboard';
+            });
+
+            useEffect(() => {
+                localStorage.setItem('flixie_active_tab_v69', activeTab);
+            }, [activeTab]);
+
+            const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+
+            // Theme State
+            const [themeMode, setThemeMode] = useState(() => {
+                return localStorage.getItem('flixie_theme_mode') || 'dark';
+            });
+
+            useEffect(() => {
+                localStorage.setItem('flixie_theme_mode', themeMode);
+            }, [themeMode]);
+
+            const isLight = themeMode === 'light';
+            const bgMain = isLight ? '#f4f5f7' : '#0d0d0d';
+            const bgSidebar = isLight ? '#ffffff' : '#141414';
+            const bgCard = isLight ? '#ffffff' : '#141414';
+            const borderCol = isLight ? '#e2e8f0' : '#222222';
+            const textMain = isLight ? '#1e293b' : '#ffffff';
+            const textSub = isLight ? '#64748b' : '#9ca3af';
+
+            // Cloud Save Status Indicator State
+            const [saveStatus, setSaveStatus] = useState('กำลังเชื่อมต่อ Cloud...');
+            const [isDataLoaded, setIsDataLoaded] = useState(false);
+
+            // Notification Permission State
+            const [notifPermission, setNotifPermission] = useState(() => {
+                if (typeof window !== 'undefined' && 'Notification' in window) {
+                    return Notification.permission;
+                }
+                return 'default';
+            });
+
+            const requestNotificationPermission = async () => {
+                if ('Notification' in window) {
+                    const permission = await Notification.requestPermission();
+                    setNotifPermission(permission);
+                    if (permission === 'granted') {
+                        alert('เปิดสิทธิ์ Notification สำเร็จ ระบบจะแจ้งเตือนเมื่อมีจอหมดอายุ');
+                        new Notification('Flixie House Admin', { body: 'ระบบแจ้งเตือนทำงานเรียบร้อยแล้ว!' });
+                    } else {
+                        alert('คุณปฏิเสธการอนุญาตการแจ้งเตือน');
+                    }
+                } else {
+                    alert('เบราว์เซอร์นี้ไม่รองรับ Desktop Notification');
+                }
+            };
+
+            // Toast Notification
+            const [toastMessage, setToastMessage] = useState(null);
+
+            const showToast = (text) => {
+                setToastMessage(text);
+                setTimeout(() => {
+                    setToastMessage(null);
+                }, 2000);
+            };
+
+            const handleCopyText = (text, label) => {
+                if (navigator.clipboard && navigator.clipboard.writeText) {
+                    navigator.clipboard.writeText(text).then(() => {
+                        showToast(`คัดลอก ${label}: ${text} สำเร็จ!`);
+                    }).catch(err => {
+                        fallbackCopyText(text, label);
+                    });
+                } else {
+                    fallbackCopyText(text, label);
+                }
+            };
+
+            const fallbackCopyText = (text, label) => {
+                const textArea = document.createElement("textarea");
+                textArea.value = text;
+                textArea.style.position = "fixed";
+                document.body.appendChild(textArea);
+                textArea.focus();
+                textArea.select();
+                try {
+                    const successful = document.execCommand('copy');
+                    if (successful) {
+                        showToast(`คัดลอก ${label}: ${text} สำเร็จ!`);
+                    }
+                } catch (err) {}
+                document.body.removeChild(textArea);
+            };
+
+            // Search Query States
+            const [searchQueryProfiles, setSearchQueryProfiles] = useState('');
+            const [searchQueryReviews, setSearchQueryReviews] = useState('');
+            const [searchQueryHistory, setSearchQueryHistory] = useState('');
+            const [searchQueryRevenue, setSearchQueryRevenue] = useState('');
+
+            // Modals State
+            const [isNotifModalOpen, setIsNotifModalOpen] = useState(false);
+            const [isEditReviewOpen, setIsEditReviewOpen] = useState(false);
+            const [editingReview, setEditingReview] = useState(null);
+
+            // Form เพิ่มรีวิว State
+            const [newRevCustomer, setNewRevCustomer] = useState('');
+            const [newRevPlatform, setNewRevPlatform] = useState('LINE');
+            const [newRevRating, setNewRevRating] = useState(10);
+            const [newRevComment, setNewRevComment] = useState('');
+
+            // Data States
+            const [reviews, setReviews] = useState([]);
+            const [shopSettings, setShopSettings] = useState({
+                shopName: 'Flixie House',
+                lineLink: 'https://line.me/ti/p/~phxjj2550',
+                facebookLink: 'https://www.facebook.com/share/18NSTRxELm/?mibextid=wwXIfr',
+                description: 'ศูนย์รวมบริการสตรีมมิ่งพรีเมียม จัดการง่าย โปร่งใส ตรวจสอบได้',
+                mobilePackages: [
+                    { id: 1, name: '1 วัน', days: 1, price: 10 },
+                    { id: 2, name: '7 วัน', days: 7, price: 49 },
+                    { id: 3, name: '14 วัน', days: 14, price: 89 },
+                    { id: 4, name: '30 วัน', days: 30, price: 109 }
+                ],
+                tvPackages: [
+                    { id: 1, name: '1 วัน', days: 1, price: 19 },
+                    { id: 2, name: '7 วัน', days: 7, price: 69 },
+                    { id: 3, name: '14 วัน', days: 14, price: 109 },
+                    { id: 4, name: '30 วัน', days: 30, price: 159 }
+                ]
+            });
+            const [accounts, setAccounts] = useState([]);
+            const [sales, setSales] = useState([]);
+            const [activities, setActivities] = useState([]);
+
+            // 1. Fetch data from Supabase on load & Setup Real-time subscription
+            useEffect(() => {
+                async function fetchCloudData() {
+                    try {
+                        const { data, error } = await supabaseClient
+                            .from('flixie_data')
+                            .select('*')
+                            .eq('id', 'main_store')
+                            .single();
+
+                        if (data && data.data) {
+                            const store = data.data;
+                            if (store.shopSettings) setShopSettings(store.shopSettings);
+                            if (store.accounts) setAccounts(store.accounts);
+                            if (store.sales) setSales(store.sales);
+                            if (store.reviews) setReviews(store.reviews);
+                            if (store.activities) setActivities(store.activities);
+                        }
+                    } catch (err) {
+                        console.error('Error fetching cloud data:', err);
+                    }
+                    setIsDataLoaded(true);
+                    setSaveStatus('ซิงค์ Cloud เรียบร้อย (Real-time)');
+                }
+                fetchCloudData();
+
+                const channel = supabaseClient
+                    .channel('public:flixie_data')
+                    .on('postgres_changes', { event: '*', schema: 'public', table: 'flixie_data', filter: 'id=eq.main_store' }, (payload) => {
+                        if (payload.new && payload.new.data) {
+                            const store = payload.new.data;
+                            if (store.shopSettings) setShopSettings(store.shopSettings);
+                            if (store.accounts) setAccounts(store.accounts);
+                            if (store.sales) setSales(store.sales);
+                            if (store.reviews) setReviews(store.reviews);
+                            if (store.activities) setActivities(store.activities);
+                            setSaveStatus('อัปเดตจาก Cloud แล้ว');
+                        }
+                    })
+                    .subscribe();
+
+                return () => {
+                    supabaseClient.removeChannel(channel);
+                };
+            }, []);
+
+            // 2. Save to Supabase function
+            const saveToCloud = async (overrideData) => {
+                if (!isDataLoaded) return;
+                setSaveStatus('กำลังซิงค์ไป Cloud...');
+                
+                const currentStoreData = overrideData || {
+                    shopSettings,
+                    accounts,
+                    sales,
+                    reviews,
+                    activities
+                };
+
+                try {
+                    const { error } = await supabaseClient
+                        .from('flixie_data')
+                        .upsert({ id: 'main_store', data: currentStoreData });
+
+                    if (error) {
+                        console.error('Cloud save error:', error);
+                        setSaveStatus('เกิดข้อผิดพลาดในการซิงค์ Cloud');
+                    } else {
+                        setSaveStatus('ซิงค์ Cloud เรียบร้อย (Real-time)');
+                    }
+                } catch (err) {
+                    console.error('Cloud save exception:', err);
+                    setSaveStatus('เกิดข้อผิดพลาดในการซิงค์ Cloud');
+                }
+            };
+
+            const updateStateAndSync = (updater, stateType) => {
+                if (stateType === 'shopSettings') {
+                    setShopSettings(prev => {
+                        const next = typeof updater === 'function' ? updater(prev) : updater;
+                        saveToCloud({ shopSettings: next, accounts, sales, reviews, activities });
+                        return next;
+                    });
+                } else if (stateType === 'accounts') {
+                    setAccounts(prev => {
+                        const next = typeof updater === 'function' ? updater(prev) : updater;
+                        saveToCloud({ shopSettings, accounts: next, sales, reviews, activities });
+                        return next;
+                    });
+                } else if (stateType === 'sales') {
+                    setSales(prev => {
+                        const next = typeof updater === 'function' ? updater(prev) : updater;
+                        saveToCloud({ shopSettings, accounts, sales: next, reviews, activities });
+                        return next;
+                    });
+                } else if (stateType === 'reviews') {
+                    setReviews(prev => {
+                        const next = typeof updater === 'function' ? updater(prev) : updater;
+                        saveToCloud({ shopSettings, accounts, sales, reviews: next, activities });
+                        return next;
+                    });
+                } else if (stateType === 'activities') {
+                    setActivities(prev => {
+                        const next = typeof updater === 'function' ? updater(prev) : updater;
+                        saveToCloud({ shopSettings, accounts, sales, reviews, activities: next });
+                        return next;
+                    });
+                }
+            };
+
+            const playAlertSound = () => {
+                try {
+                    const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                    const osc = audioCtx.createOscillator();
+                    const gainNode = audioCtx.createGain();
+
+                    osc.type = 'sine';
+                    osc.frequency.setValueAtTime(587.33, audioCtx.currentTime);
+                    osc.frequency.setValueAtTime(880, audioCtx.currentTime + 0.15);
+
+                    gainNode.gain.setValueAtTime(0.3, audioCtx.currentTime);
+                    gainNode.gain.exponentialRampToValueAtTime(0.00001, audioCtx.currentTime + 0.8);
+
+                    osc.connect(gainNode);
+                    gainNode.connect(audioCtx.destination);
+
+                    osc.start();
+                    osc.stop(audioCtx.currentTime + 0.8);
+                } catch(e) {}
+            };
+
+            const parseExpiryDate = (expiryStr) => {
+                if (!expiryStr || expiryStr === '-') return null;
+                try {
+                    const parts = expiryStr.split(' ');
+                    if (parts.length >= 2) {
+                        const dateParts = parts[0].split('/');
+                        const timeParts = parts[1].split(':');
+                        if (dateParts.length === 3 && timeParts.length >= 2) {
+                            const d = parseInt(dateParts[0], 10);
+                            const m = parseInt(dateParts[1], 10) - 1;
+                            const y = parseInt(dateParts[2], 10);
+                            const h = parseInt(timeParts[0], 10);
+                            const min = parseInt(timeParts[1], 10);
+                            return new Date(y, m, d, h, min, 0);
+                        }
+                    }
+                } catch(e) {}
+                return null;
+            };
+
+            // ระบบตรวจสอบจอหมดอายุอัตโนมัติทุกๆ 1 นาที (พร้อมเสียงเตือนและ Browser Notification ทันทีที่พบจอหมดเวลาใหม่)
+            useEffect(() => {
+                if (!isDataLoaded || accounts.length === 0) return;
+
+                const checkExpiryInterval = setInterval(() => {
+                    const now = new Date();
+                    let hasChanged = false;
+                    let newlyExpiredCount = 0;
+
+                    const updated = accounts.map(acc => {
+                        let accChanged = false;
+                        const newProfiles = acc.profiles.map(p => {
+                            const profilePin = p.pin !== undefined ? p.pin : '2008';
+                            if (p.status === 'ไม่ว่าง' && p.end && p.end !== '-') {
+                                const expDate = parseExpiryDate(p.end);
+                                if (expDate && now > expDate) {
+                                    if (p.status !== 'หมดเวลา') {
+                                        newlyExpiredCount++;
+                                    }
+                                    accChanged = true;
+                                    hasChanged = true;
+                                    return { ...p, pin: profilePin, status: 'หมดเวลา' };
+                                }
+                            }
+                            return { ...p, pin: profilePin };
+                        });
+                        return accChanged ? { ...acc, profiles: newProfiles } : acc;
+                    });
+
+                    if (hasChanged) {
+                        updateStateAndSync(updated, 'accounts');
+                        playAlertSound();
+                        if ('Notification' in window && Notification.permission === 'granted') {
+                            new Notification('🚨 แจ้งเตือนจอ Netflix หมดอายุ!', {
+                                body: `มีจอหมดอายุใหม่ ${newlyExpiredCount} จอ กรุณาตรวจสอบและกดคืนจอในระบบ`,
+                                icon: 'https://cdn-icons-png.flaticon.com/512/564/564619.png'
+                            });
+                        }
+                    }
+                }, 60000); // ทุก 1 นาที
+
+                return () => clearInterval(checkExpiryInterval);
+            }, [isDataLoaded, accounts]);
+
+            const handleSaveNewReview = (e) => {
+                e.preventDefault();
+                if (!newRevCustomer || !newRevComment) {
+                    alert('กรุณากรอกชื่อลูกค้าและข้อความความคิดเห็น');
+                    return;
+                }
+                const now = new Date();
+                const dateStr = `${String(now.getDate()).padStart(2,'0')}/${String(now.getMonth()+1).padStart(2,'0')}/${now.getFullYear()}`;
+                const newRev = {
+                    id: Date.now(),
+                    dateStr,
+                    customer: newRevCustomer,
+                    rating: parseInt(newRevRating) || 10,
+                    comment: newRevComment,
+                    platform: newRevPlatform
+                };
+                updateStateAndSync([newRev, ...reviews], 'reviews');
+                setNewRevCustomer('');
+                setNewRevComment('');
+                setNewRevRating(10);
+                setNewRevPlatform('LINE');
+                alert('บันทึกรีวิวสำเร็จ!');
+            };
+
+            const handleUpdateReview = (e) => {
+                e.preventDefault();
+                if (!editingReview) return;
+                const updated = reviews.map(r => r.id === editingReview.id ? editingReview : r);
+                updateStateAndSync(updated, 'reviews');
+                setIsEditReviewOpen(false);
+                setEditingReview(null);
+                alert('แก้ไขรีวิวสำเร็จ!');
+            };
+
+            const handleDeleteReview = (id) => {
+                if (confirm('คุณต้องการลบรีวิวนี้ใช่หรือไม่?')) {
+                    const updated = reviews.filter(r => r.id !== id);
+                    updateStateAndSync(updated, 'reviews');
+                    alert('ลบรีวิวสำเร็จ');
+                }
+            };
+
+            const fileInputRef = useRef(null);
+
+            const handleExportBackup = () => {
+                const backupData = {
+                    version: "1.0",
+                    timestamp: new Date().toISOString(),
+                    shopSettings,
+                    accounts,
+                    sales,
+                    reviews,
+                    activities
+                };
+                const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(backupData, null, 2));
+                const downloadAnchor = document.createElement('a');
+                downloadAnchor.setAttribute("href", dataStr);
+                downloadAnchor.setAttribute("download", `flixie_house_backup_${new Date().toISOString().slice(0,10)}.json`);
+                document.body.appendChild(downloadAnchor);
+                downloadAnchor.click();
+                downloadAnchor.remove();
+                alert('ดาวน์โหลดไฟล์สำรองข้อมูลสำเร็จ!');
+            };
+
+            const handleImportBackup = (e) => {
+                const fileReader = new FileReader();
+                if (e.target.files[0]) {
+                    fileReader.readAsText(e.target.files[0], "UTF-8");
+                    fileReader.onload = (event) => {
+                        try {
+                            const parsed = JSON.parse(event.target.result);
+                            if (parsed.accounts && parsed.shopSettings) {
+                                const newStore = {
+                                    shopSettings: parsed.shopSettings,
+                                    accounts: parsed.accounts || [],
+                                    sales: parsed.sales || [],
+                                    reviews: parsed.reviews || [],
+                                    activities: parsed.activities || []
+                                };
+                                setShopSettings(newStore.shopSettings);
+                                setAccounts(newStore.accounts);
+                                setSales(newStore.sales);
+                                setReviews(newStore.reviews);
+                                setActivities(newStore.activities);
+                                saveToCloud(newStore);
+                                alert('กู้คืนข้อมูลสำรองและซิงค์ขึ้น Cloud สำเร็จเรียบร้อยแล้ว!');
+                            } else {
+                                alert('ไฟล์สำรองข้อมูลไม่ถูกต้อง');
+                            }
+                        } catch (error) {
+                            alert('เกิดข้อผิดพลาดในการอ่านไฟล์ JSON');
+                        }
+                    };
+                }
+            };
+
+            const getExpiredProfilesOnly = () => {
+                let list = [];
+                const now = new Date();
+
+                accounts.forEach(acc => {
+                    acc.profiles.forEach(p => {
+                        if (p.status === 'หมดเวลา') {
+                            list.push({ ...p, accId: acc.id, email: acc.email });
+                        } else if (p.status === 'ไม่ว่าง' && p.end && p.end !== '-') {
+                            const expDate = parseExpiryDate(p.end);
+                            if (expDate && now > expDate) {
+                                list.push({ ...p, accId: acc.id, email: acc.email });
+                            }
+                        }
+                    });
+                });
+                return list;
+            };
+
+            const expiredList = getExpiredProfilesOnly();
+
+            const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+            const [formName, setFormName] = useState('');
+            const [formEmail, setFormEmail] = useState('');
+            const [formPassword, setFormPassword] = useState('');
+            const [formProfilesCount, setFormProfilesCount] = useState(5);
+            const [formNote, setFormNote] = useState('');
+
+            const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+            const [editingAccount, setEditingAccount] = useState(null);
+
+            const [isAddCustomerOpen, setIsAddCustomerOpen] = useState(false);
+            const [selectedProfileForCustomer, setSelectedProfileForCustomer] = useState(null);
+            const [custName, setCustName] = useState('');
+            const [custContact, setCustContact] = useState('LINE');
+            const [custDevice, setCustDevice] = useState('มือถือ');
+            
+            const getTodayDDMMYYYY = () => {
+                const d = new Date();
+                const day = String(d.getDate()).padStart(2, '0');
+                const month = String(d.getMonth() + 1).padStart(2, '0');
+                const year = d.getFullYear();
+                return `${day}/${month}/${year}`;
+            };
+
+            const getCurrentTimeHHMM = () => {
+                const d = new Date();
+                const h = String(d.getHours()).padStart(2, '0');
+                const m = String(d.getMinutes()).padStart(2, '0');
+                return `${h}:${m}`;
+            };
+
+            const [custDate, setCustDate] = useState(getTodayDDMMYYYY());
+            const [custTime, setCustTime] = useState(getCurrentTimeHHMM());
+            const [custDuration, setCustDuration] = useState('7 วัน');
+            const [custCustomPrice, setCustCustomPrice] = useState('');
+
+            const getAutoPrice = () => {
+                let pkgList = custDevice === 'Smart TV' ? shopSettings.tvPackages : shopSettings.mobilePackages;
+                let found = pkgList.find(p => p.name === custDuration);
+                if (found) return found.price;
+                return custDevice === 'Smart TV' ? 69 : 49;
+            };
+
+            const finalPrice = custCustomPrice !== '' ? parseFloat(custCustomPrice) || 0 : getAutoPrice();
+
+            const parseDDMMYYYY = (dateStr) => {
+                try {
+                    const parts = dateStr.split('/');
+                    if (parts.length === 3) {
+                        const d = parseInt(parts[0], 10);
+                        const m = parseInt(parts[1], 10) - 1;
+                        const y = parseInt(parts[2], 10);
+                        return new Date(y, m, d);
+                    }
+                } catch(e) {}
+                return new Date();
+            };
+
+            const calculateExpiry = () => {
+                let daysNum = 7;
+                if (custDuration.includes('1 วัน')) daysNum = 1;
+                else if (custDuration.includes('7 วัน')) daysNum = 7;
+                else if (custDuration.includes('14 วัน')) daysNum = 14;
+                else if (custDuration.includes('30 วัน')) daysNum = 30;
+
+                try {
+                    let baseDate = parseDDMMYYYY(custDate);
+                    let [h, min] = (custTime || '17:24').split(':').map(Number);
+                    baseDate.setHours(h || 0, min || 0, 0, 0);
+                    baseDate.setDate(baseDate.getDate() + daysNum);
+
+                    let ed = String(baseDate.getDate()).padStart(2, '0');
+                    let em = String(baseDate.getMonth() + 1).padStart(2, '0');
+                    let ey = baseDate.getFullYear();
+                    let eh = String(baseDate.getHours()).padStart(2, '0');
+                    let emin = String(baseDate.getMinutes()).padStart(2, '0');
+
+                    return `${ed}/${em}/${ey} ${eh}:${emin} น.`;
+                } catch(e) {
+                    return '11/11/2026 17:24 น.';
+                }
+            };
+
+            const getFormattedStartStr = () => {
+                try {
+                    const [h, min] = (custTime || '17:24').split(':');
+                    return `${custDate} ${h}:${min} น.`;
+                } catch(e) {
+                    return `${custDate} ${custTime} น.`;
+                }
+            };
+
+            const handleCreateAccount = (e) => {
+                e.preventDefault();
+                if (!formEmail || !formPassword) {
+                    alert('กรุณากรอกอีเมลและรหัสผ่าน Netflix');
+                    return;
+                }
+
+                const count = parseInt(formProfilesCount) || 5;
+                const newProfiles = [];
+                for (let i = 1; i <= count; i++) {
+                    newProfiles.push({
+                        id: i,
+                        userLabel: `FH - User ${i}`,
+                        pin: String(Math.floor(1000 + Math.random() * 9000)),
+                        status: 'ว่าง',
+                        customer: '-',
+                        contact: '-',
+                        start: '-',
+                        end: '-',
+                        device: '-',
+                        duration: '-'
+                    });
+                }
+
+                const newAcc = {
+                    id: Date.now(),
+                    name: formName ? formName : 'Netflix Hub',
+                    email: formEmail,
+                    password: formPassword,
+                    collapsed: false,
+                    note: formNote,
+                    profiles: newProfiles
+                };
+
+                const updatedAccs = [...accounts, newAcc];
+                updateStateAndSync(updatedAccs, 'accounts');
+                setIsAddModalOpen(false);
+                setFormName('');
+                setFormEmail('');
+                setFormPassword('');
+                setFormProfilesCount(5);
+                setFormNote('');
+                alert('เพิ่มบัญชี Netflix และซิงค์ขึ้น Cloud สำเร็จ!');
+            };
+
+            const handleUpdateAccount = (e) => {
+                e.preventDefault();
+                if (!editingAccount) return;
+
+                const updated = accounts.map(acc => {
+                    if (acc.id === editingAccount.id) {
+                        return editingAccount;
+                    }
+                    return acc;
+                });
+
+                updateStateAndSync(updated, 'accounts');
+                setIsEditModalOpen(false);
+                setEditingAccount(null);
+                alert('แก้ไขข้อมูลบัญชีสำเร็จ!');
+            };
+
+            const handleUpdateProfilePin = (accId, profileId, newPin) => {
+                const updated = accounts.map(acc => {
+                    if (acc.id === accId) {
+                        const newProfiles = acc.profiles.map(p => {
+                            if (p.id === profileId) {
+                                return { ...p, pin: newPin };
+                            }
+                            return p;
+                        });
+                        return { ...acc, profiles: newProfiles };
+                    }
+                    return acc;
+                });
+                updateStateAndSync(updated, 'accounts');
+            };
+
+            const handleDeleteAccount = (accId) => {
+                if (confirm(`คุณต้องการลบบัญชีนี้ใช่หรือไม่?`)) {
+                    const filtered = accounts.filter(acc => acc.id !== accId);
+                    updateStateAndSync(filtered, 'accounts');
+                    alert('ลบบัญชีสำเร็จ!');
+                }
+            };
+
+            const toggleCollapse = (accId) => {
+                const updated = accounts.map(acc => {
+                    if (acc.id === accId) {
+                        return { ...acc, collapsed: !acc.collapsed };
+                    }
+                    return acc;
+                });
+                setAccounts(updated);
+            };
+
+            const handleReturnProfile = (accId, profileId, userLabel) => {
+                if (confirm(`คุณต้องการคืนจอ "${userLabel}" กลับเป็นสถานะว่างใช่หรือไม่?`)) {
+                    const updatedAccounts = accounts.map(acc => {
+                        if (acc.id === accId) {
+                            const newProfiles = acc.profiles.map(p => {
+                                if (p.id === profileId) {
+                                    return {
+                                        ...p,
+                                        status: 'ว่าง',
+                                        customer: '-',
+                                        contact: '-',
+                                        start: '-',
+                                        end: '-',
+                                        device: '-',
+                                        duration: '-'
+                                    };
+                                }
+                                return p;
+                            });
+                            return { ...acc, profiles: newProfiles };
+                        }
+                        return acc;
+                    });
+                    setAccounts(updatedAccounts);
+
+                    const now = new Date();
+                    const timeStr = `${String(now.getDate()).padStart(2,'0')}/${String(now.getMonth()+1).padStart(2,'0')}/${now.getFullYear()} ${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')} น.`;
+                    const newActs = [{ id: Date.now(), text: `คืนจอ ${userLabel} สำเร็จเมื่อ ${timeStr}` }, ...activities];
+                    
+                    const newStore = { shopSettings, accounts: updatedAccounts, sales, reviews, activities: newActs };
+                    setActivities(newActs);
+                    saveToCloud(newStore);
+
+                    alert(`คืนจอ ${userLabel} เรียบร้อยแล้ว`);
+                }
+            };
+
+            const handleSaveCustomer = (e) => {
+                e.preventDefault();
+                if (!custName || !selectedProfileForCustomer) {
+                    alert('กรุณากรอกข้อมูลให้ครบถ้วน');
+                    return;
+                }
+
+                const { accId, profileId, userLabel } = selectedProfileForCustomer;
+                const startDateStr = getFormattedStartStr();
+                const endDateStr = calculateExpiry();
+
+                const updatedAccounts = accounts.map(acc => {
+                    if (acc.id === accId) {
+                        const newProfiles = acc.profiles.map(p => {
+                            if (p.id === profileId) {
+                                return {
+                                    ...p,
+                                    status: 'ไม่ว่าง',
+                                    customer: custName,
+                                    contact: custContact,
+                                    start: startDateStr,
+                                    end: endDateStr,
+                                    device: custDevice,
+                                    duration: custDuration
+                                };
+                            }
+                            return p;
+                        });
+                        return { ...acc, profiles: newProfiles };
+                    }
+                    return acc;
+                });
+
+                const now = new Date();
+                const dateStrFormatted = `${String(now.getDate()).padStart(2,'0')}/${String(now.getMonth()+1).padStart(2,'0')}/${now.getFullYear()} ${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')} น.`;
+                
+                const newSale = {
+                    id: Date.now(),
+                    rawDate: now.toISOString(),
+                    dateStr: dateStrFormatted,
+                    customer: custName,
+                    contact: custContact,
+                    profile: userLabel,
+                    device: custDevice,
+                    duration: custDuration,
+                    amount: finalPrice
+                };
+                const updatedSales = [newSale, ...sales];
+
+                setAccounts(updatedAccounts);
+                setSales(updatedSales);
+                
+                const newStore = { shopSettings, accounts: updatedAccounts, sales: updatedSales, reviews, activities };
+                saveToCloud(newStore);
+
+                setIsAddCustomerOpen(false);
+                setCustName('');
+                setCustCustomPrice('');
+                alert('เพิ่มลูกค้าและบันทึกประวัติสำเร็จ!');
+            };
+
+            const calculateRevenueMetrics = () => {
+                const now = new Date();
+                const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+                const sevenDaysAgo = now.getTime() - (7 * 24 * 60 * 60 * 1000);
+                const thirtyDaysAgo = now.getTime() - (30 * 24 * 60 * 60 * 1000);
+
+                let todayRev = 0;
+                let sevenDaysRev = 0;
+                let thirtyDaysRev = 0;
+                let totalRev = 0;
+
+                sales.forEach(s => {
+                    const amt = parseFloat(s.amount) || 0;
+                    totalRev += amt;
+
+                    let saleTime = s.rawDate ? new Date(s.rawDate).getTime() : null;
+                    if (!saleTime && s.dateStr) {
+                        const parsed = parseExpiryDate(s.dateStr);
+                        if (parsed) saleTime = parsed.getTime();
+                    }
+
+                    if (saleTime) {
+                        if (saleTime >= startOfToday) todayRev += amt;
+                        if (saleTime >= sevenDaysAgo) sevenDaysRev += amt;
+                        if (saleTime >= thirtyDaysAgo) thirtyDaysRev += amt;
+                    } else {
+                        todayRev += amt;
+                        sevenDaysRev += amt;
+                        thirtyDaysRev += amt;
+                    }
+                });
+
+                return { 
+                    todayRev, 
+                    sevenDaysRev, 
+                    thirtyDaysRev, 
+                    totalRev, 
+                    totalCount: sales.length 
+                };
+            };
+
+            const revMetrics = calculateRevenueMetrics();
+
+            let totalAccounts = accounts.length;
+            let totalProfiles = accounts.reduce((acc, a) => acc + a.profiles.length, 0);
+            let vacantProfiles = 0;
+            let activeProfiles = 0;
+            let expiredProfiles = 0;
+
+            accounts.forEach(acc => {
+                acc.profiles.forEach(p => {
+                    if (p.status === 'ว่าง') vacantProfiles++;
+                    else if (p.status === 'หมดเวลา') expiredProfiles++;
+                    else activeProfiles++;
+                });
+            });
+
+            let totalCustomersCount = sales.length;
+
+            const filteredAccounts = accounts.filter(acc => {
+                if (!searchQueryProfiles) return true;
+                const query = searchQueryProfiles.toLowerCase().trim();
+                if (acc.email.toLowerCase().includes(query)) return true;
+                const matchProfileCustomer = acc.profiles.some(p => p.customer.toLowerCase().includes(query));
+                if (matchProfileCustomer) return true;
+                return false;
+            });
+
+            const filteredReviews = reviews.filter(r => {
+                if (!searchQueryReviews) return true;
+                const query = searchQueryReviews.toLowerCase().trim();
+                if (r.customer.toLowerCase().includes(query)) return true;
+                if (r.comment.toLowerCase().includes(query)) return true;
+                return false;
+            });
+
+            const filteredSales = sales.filter(s => {
+                if (!searchQueryHistory) return true;
+                const query = searchQueryHistory.toLowerCase().trim();
+                if (s.customer.toLowerCase().includes(query)) return true;
+                if (s.contact.toLowerCase().includes(query)) return true;
+                if (s.device.toLowerCase().includes(query)) return true;
+                return false;
+            });
+
+            const filteredRevenueSales = sales.filter(s => {
+                if (!searchQueryRevenue) return true;
+                const query = searchQueryRevenue.toLowerCase().trim();
+                if (s.customer.toLowerCase().includes(query)) return true;
+                if (s.device.toLowerCase().includes(query)) return true;
+                if (s.duration.toLowerCase().includes(query)) return true;
+                return false;
+            });
+
+            const renderStatsCards = () => (
+                <div className="grid grid-cols-2 md:grid-cols-6 gap-3.5">
+                    <div className="border rounded-xl p-4 shadow-lg transition" style={{ backgroundColor: bgCard, borderColor: borderCol }}>
+                        <h3 className="text-xl font-bold" style={{ color: textMain }}>{totalAccounts}</h3>
+                        <p className="text-[11px] mt-1" style={{ color: textSub }}>บัญชี Netflix ทั้งหมด</p>
+                    </div>
+                    <div className="border rounded-xl p-4 shadow-lg transition" style={{ backgroundColor: bgCard, borderColor: borderCol }}>
+                        <h3 className="text-xl font-bold" style={{ color: textMain }}>{totalProfiles}</h3>
+                        <p className="text-[11px] mt-1" style={{ color: textSub }}>โปรไฟล์ (จอ) ทั้งหมด</p>
+                    </div>
+                    <div className="border rounded-xl p-4 shadow-lg transition" style={{ backgroundColor: bgCard, borderColor: borderCol }}>
+                        <h3 className="text-xl font-bold text-emerald-400">{vacantProfiles}</h3>
+                        <p className="text-[11px] mt-1" style={{ color: textSub }}>โปรไฟล์ว่าง</p>
+                    </div>
+                    <div className="border rounded-xl p-4 shadow-lg transition" style={{ backgroundColor: bgCard, borderColor: borderCol }}>
+                        <h3 className="text-xl font-bold text-red-500">{activeProfiles}</h3>
+                        <p className="text-[11px] mt-1" style={{ color: textSub }}>โปรไฟล์ไม่ว่าง</p>
+                    </div>
+                    <div className="border rounded-xl p-4 shadow-lg transition" style={{ backgroundColor: bgCard, borderColor: borderCol }}>
+                        <h3 className="text-xl font-bold text-amber-400">{expiredProfiles}</h3>
+                        <p className="text-[11px] mt-1" style={{ color: textSub }}>โปรไฟล์หมดเวลา</p>
+                    </div>
+                    <div className="border rounded-xl p-4 shadow-lg transition" style={{ backgroundColor: bgCard, borderColor: borderCol }}>
+                        <h3 className="text-xl font-bold" style={{ color: textMain }}>{totalCustomersCount}</h3>
+                        <p className="text-[11px] mt-1" style={{ color: textSub }}>ลูกค้าทั้งหมด</p>
+                    </div>
+                </div>
+            );
+
+            return (
+                <div className="flex h-screen overflow-hidden transition relative" style={{ backgroundColor: bgMain, color: textMain }}>
+                    
+                    {toastMessage && (
+                        <div className="fixed top-5 left-1/2 transform -translate-x-1/2 bg-emerald-600 text-white px-5 py-2.5 rounded-2xl shadow-2xl z-50 text-xs font-bold transition flex items-center gap-2">
+                            <span>📋</span> {toastMessage}
+                        </div>
+                    )}
+
+                    {isMobileMenuOpen && (
+                        <div 
+                            onClick={() => setIsMobileMenuOpen(false)}
+                            className="fixed inset-0 bg-black/60 z-40 md:hidden"
+                        ></div>
+                    )}
+
+                    <aside className={`
+                        fixed md:static inset-y-0 left-0 z-50
+                        w-56 border-r flex flex-col justify-between p-3 flex-shrink-0 transition-transform duration-300
+                        ${isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}
+                    `} style={{ backgroundColor: bgSidebar, borderColor: borderCol }}>
+                        <div>
+                            <div className="flex items-center justify-between px-2 mb-6 pt-1">
+                                <div className="flex items-center gap-2.5">
+                                    <div className="w-7 h-7 bg-[#e50914] rounded-lg flex items-center justify-center font-bold text-white text-xs shadow-md">
+                                        N
+                                    </div>
+                                    <div>
+                                        <h2 className="font-bold text-xs tracking-wide" style={{ color: textMain }}>CLOUD PANEL</h2>
+                                        <p className="text-[10px]" style={{ color: textSub }}>{shopSettings.shopName}</p>
+                                    </div>
+                                </div>
+                                <button 
+                                    onClick={() => setIsMobileMenuOpen(false)}
+                                    className="md:hidden text-gray-400 hover:text-white text-sm p-1"
+                                >
+                                    ✕
+                                </button>
+                            </div>
+
+                            <div className="space-y-1">
+                                {[
+                                    { id: 'dashboard', label: 'หน้าแรก (Dashboard)', icon: '🏠' },
+                                    { id: 'profiles', label: 'บัญชีและโปรไฟล์', icon: '👤' },
+                                    { id: 'reviews', label: 'รีวิวลูกค้า', icon: '⭐' },
+                                    { id: 'purchase_history', label: 'ประวัติการซื้อทั้งหมด', icon: '📋' },
+                                    { id: 'revenue', label: 'รายได้', icon: '💰' },
+                                    { id: 'shop_settings', label: 'ตั้งค่าร้าน', icon: '⚙️' }
+                                ].map(m => (
+                                    <button 
+                                        key={m.id}
+                                        onClick={() => {
+                                            setActiveTab(m.id);
+                                            setIsMobileMenuOpen(false);
+                                        }}
+                                        className={`w-full flex items-center gap-2.5 px-3 py-2.5 rounded-lg font-medium transition text-xs ${activeTab === m.id ? (isLight ? 'bg-gray-100 text-gray-900 border border-gray-300' : 'bg-[#222222] text-white border border-[#333333]') : (isLight ? 'text-gray-600 hover:bg-gray-50' : 'text-gray-400 hover:bg-[#1a1a1a] hover:text-white')}`}
+                                    >
+                                        <span className="text-xs">{m.icon}</span>
+                                        <span>{m.label}</span>
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+
+                        <div className="p-2 border-t space-y-2" style={{ borderColor: borderCol }}>
+                            <div className="text-[10px] text-center py-1.5 px-2 rounded bg-emerald-950/40 border border-emerald-900/50 text-emerald-400 font-bold flex items-center justify-center gap-1">
+                                <span>☁️</span> {saveStatus}
+                            </div>
+                        </div>
+                    </aside>
+
+                    <div className="flex-1 flex flex-col overflow-hidden w-full">
+                        <header className="h-12 border-b flex items-center justify-between px-4 md:px-6 flex-shrink-0 transition" style={{ backgroundColor: bgSidebar, borderColor: borderCol }}>
+                            <div className="flex items-center gap-3">
+                                <button 
+                                    onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
+                                    className="md:hidden p-1.5 rounded-lg bg-[#222] text-white text-sm focus:outline-none flex items-center justify-center shadow"
+                                    title="เปิดเมนู"
+                                >
+                                    ☰
+                                </button>
+                                <h1 className="font-bold text-xs uppercase tracking-wider truncate max-w-[160px] md:max-w-none" style={{ color: textMain }}>
+                                    {activeTab === 'dashboard' ? 'หน้าแรก' : activeTab === 'profiles' ? 'บัญชีและโปรไฟล์' : activeTab === 'reviews' ? 'รีวิวลูกค้า' : activeTab === 'purchase_history' ? 'ประวัติการซื้อทั้งหมด' : activeTab === 'revenue' ? 'รายได้' : 'ตั้งค่าร้าน'}
+                                </h1>
+                            </div>
+                            
+                            <div className="flex items-center gap-3 md:gap-4">
+                                <div className="relative">
+                                    <button 
+                                        onClick={() => setIsNotifModalOpen(true)}
+                                        className="relative p-1.5 rounded-full hover:bg-gray-800 transition focus:outline-none"
+                                        title="คลิกเพื่อดูรายการจอที่หมดเวลาแล้ว"
+                                    >
+                                        <span className="text-base">🔔</span>
+                                        {expiredList.length > 0 && (
+                                            <span className="absolute -top-1 -right-1 bg-[#e50914] text-white text-[9px] font-bold rounded-full w-4 h-4 flex items-center justify-center shadow">
+                                                {expiredList.length}
+                                            </span>
+                                        )}
+                                    </button>
+                                </div>
+
+                                <div className="flex items-center border rounded-full p-0.5" style={{ backgroundColor: isLight ? '#f1f5f9' : '#1c1c1c', borderColor: borderCol }}>
+                                    <button 
+                                        onClick={() => setThemeMode('light')} 
+                                        className={`w-6 h-6 rounded-full flex items-center justify-center text-xs transition ${isLight ? 'bg-white shadow text-amber-500' : 'text-gray-400 hover:text-white'}`}
+                                        title="โหมดสว่าง"
+                                    >☀️</button>
+                                    <button 
+                                        onClick={() => setThemeMode('dark')} 
+                                        className={`w-6 h-6 rounded-full flex items-center justify-center text-xs transition ${!isLight ? 'bg-[#282828] shadow text-amber-400' : 'text-gray-400'}`}
+                                        title="โหมดมืด"
+                                    >🌙</button>
+                                </div>
+                                <div className="hidden md:block h-5 w-[1px]" style={{ backgroundColor: borderCol }}></div>
+                                <div className="hidden md:flex items-center gap-2.5">
+                                    <div className="w-7 h-7 bg-[#222] rounded-full flex items-center justify-center font-bold text-white text-[11px] border border-[#333]">AD</div>
+                                    <div>
+                                        <p className="font-bold text-xs" style={{ color: textMain }}>แอดมิน</p>
+                                        <p className="text-[10px]" style={{ color: textSub }}>Cloud Synced</p>
+                                    </div>
+                                </div>
+                            </div>
+                        </header>
+
+                        <main className="flex-1 overflow-y-auto p-4 md:p-6 space-y-5 custom-scrollbar">
+                            
+                            {activeTab === 'dashboard' && (
+                                <div className="space-y-5">
+                                    {renderStatsCards()}
+
+                                    <div className="border rounded-2xl p-5 shadow-xl transition" style={{ backgroundColor: bgCard, borderColor: borderCol }}>
+                                        <h3 className="font-bold text-xs mb-3 text-amber-400">รายการที่หมดเวลาแล้วและรอคืนเป็นว่าง ({expiredList.length})</h3>
+                                        {expiredList.length === 0 ? (
+                                            <div className="py-10 text-center">
+                                                <p className="text-xs font-medium" style={{ color: textSub }}>ไม่มีรายการรอคืนเป็นว่างในขณะนี้</p>
+                                            </div>
+                                        ) : (
+                                            <div className="space-y-2.5">
+                                                {expiredList.map((item, idx) => (
+                                                    <div key={idx} className="border rounded-xl p-3 flex justify-between items-center transition" style={{ backgroundColor: isLight ? '#f8fafc' : '#1a1a1a', borderColor: borderCol }}>
+                                                        <div>
+                                                            <div className="flex items-center gap-2">
+                                                                <span className="font-bold text-xs" style={{ color: textMain }}>{item.userLabel}</span>
+                                                                <span className="px-2 py-0.5 rounded-full text-[9px] font-bold bg-amber-950 text-amber-400 border border-amber-900">หมดเวลา</span>
+                                                            </div>
+                                                            <p className="text-[10px] mt-1" style={{ color: textSub }}>บัญชี: {item.email} | ลูกค้า: {item.customer}</p>
+                                                            <p className="text-[10px] text-amber-400 mt-0.5">หมดอายุเมื่อ: {item.end}</p>
+                                                        </div>
+                                                        <button 
+                                                            onClick={() => handleReturnProfile(item.accId, item.id, item.userLabel)}
+                                                            className="bg-amber-600 hover:bg-amber-700 text-white px-3.5 py-1.5 rounded-lg text-xs font-semibold transition shadow"
+                                                        >
+                                                            คืนจอเป็นว่าง
+                                                        </button>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        )}
+                                    </div>
+
+                                    <div className="border rounded-2xl p-5 shadow-xl transition" style={{ backgroundColor: bgCard, borderColor: borderCol }}>
+                                        <h3 className="font-bold text-xs mb-3" style={{ color: textMain }}>กิจกรรมล่าสุด</h3>
+                                        <div className="max-h-48 overflow-y-auto space-y-2 custom-scrollbar">
+                                            {activities.length === 0 ? (
+                                                <div className="py-10 text-center">
+                                                    <p className="text-xs font-medium" style={{ color: textSub }}>ยังไม่มีกิจกรรมในระบบ</p>
+                                                </div>
+                                            ) : (
+                                                activities.map((act) => (
+                                                    <div key={act.id} className="border rounded-xl p-2.5 text-xs flex items-center justify-between transition" style={{ backgroundColor: isLight ? '#f8fafc' : '#1a1a1a', borderColor: borderCol }}>
+                                                        <span style={{ color: textMain }}>{act.text}</span>
+                                                    </div>
+                                                ))
+                                            )}
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+
+                            {activeTab === 'profiles' && (
+                                <div className="space-y-5">
+                                    {renderStatsCards()}
+
+                                    <div className="flex justify-between items-center pt-2 flex-wrap gap-3">
+                                        <div className="relative w-full md:w-80">
+                                            <span className="absolute inset-y-0 left-0 flex items-center pl-3.5 pointer-events-none text-gray-400">🔍</span>
+                                            <input 
+                                                type="text" 
+                                                value={searchQueryProfiles} 
+                                                onChange={e => setSearchQueryProfiles(e.target.value)} 
+                                                placeholder="ค้นหาอีเมล / ชื่อลูกค้า..." 
+                                                className="w-full border rounded-xl pl-10 pr-4 py-2 text-xs outline-none focus:border-[#e50914] shadow-inner transition"
+                                                style={{ backgroundColor: isLight ? '#ffffff' : '#181818', borderColor: borderCol, color: textMain }}
+                                            />
+                                            {searchQueryProfiles && (
+                                                <button onClick={() => setSearchQueryProfiles('')} className="absolute inset-y-0 right-0 pr-3 flex items-center text-xs text-gray-400 hover:text-white">✕</button>
+                                            )}
+                                        </div>
+
+                                        <button onClick={() => setIsAddModalOpen(true)} className="bg-[#e50914] text-white px-4 py-2 rounded-xl text-xs font-semibold shadow hover:bg-[#b80710] transition flex items-center gap-1.5">
+                                            <span>+</span> เพิ่มบัญชี
+                                        </button>
+                                    </div>
+
+                                    {filteredAccounts.length === 0 ? (
+                                        <div className="border rounded-2xl p-12 text-center shadow-xl" style={{ backgroundColor: bgCard, borderColor: borderCol }}>
+                                            <p className="text-xs font-medium mb-2" style={{ color: textSub }}>ยังไม่มีบัญชี Netflix ในระบบ Cloud</p>
+                                            <button onClick={() => setIsAddModalOpen(true)} className="bg-[#e50914] text-white px-4 py-2 rounded-xl text-xs font-semibold shadow hover:bg-[#b80710] transition">
+                                                + เพิ่มบัญชีแรกของคุณ
+                                            </button>
+                                        </div>
+                                    ) : (
+                                        filteredAccounts.map(acc => (
+                                            <div key={acc.id} className="border rounded-2xl overflow-hidden shadow-xl transition relative" style={{ backgroundColor: bgCard, borderColor: borderCol }}>
+                                                <div className="px-5 py-4 border-b flex justify-between items-center flex-wrap gap-4" style={{ borderColor: borderCol, backgroundColor: isLight ? '#f8fafc' : '#141414' }}>
+                                                    <div className="flex items-center gap-3">
+                                                        <button 
+                                                            onClick={() => toggleCollapse(acc.id)} 
+                                                            className="w-7 h-7 rounded-lg border flex items-center justify-center text-xs hover:bg-[#222] transition text-gray-300"
+                                                            style={{ borderColor: borderCol, backgroundColor: isLight ? '#f1f5f9' : '#1c1c1c' }}
+                                                        >
+                                                            {acc.collapsed ? '▼' : '▲'}
+                                                        </button>
+                                                        <button 
+                                                            onClick={() => handleCopyText(acc.email, 'อีเมลบัญชี')}
+                                                            className="font-bold text-xs text-emerald-500 hover:underline flex items-center gap-1.5"
+                                                        >
+                                                            <span>{acc.email}</span>
+                                                            <span className="text-[10px] text-gray-400">📋</span>
+                                                        </button>
+                                                    </div>
+
+                                                    <div className="flex items-center gap-2">
+                                                        <button 
+                                                            onClick={() => {
+                                                                setEditingAccount({...acc});
+                                                                setIsEditModalOpen(true);
+                                                            }} 
+                                                            className="px-3.5 py-1.5 border rounded-xl hover:bg-[#222] transition text-xs font-semibold flex items-center gap-1.5" 
+                                                            style={{ borderColor: borderCol, backgroundColor: isLight ? '#f1f5f9' : '#1c1c1c', color: textMain }}
+                                                        >
+                                                            <span>✏️</span> แก้ไข PIN / ข้อมูล
+                                                        </button>
+                                                        <button 
+                                                            onClick={() => handleDeleteAccount(acc.id)} 
+                                                            className="px-3.5 py-1.5 border border-red-900/60 bg-red-950/20 rounded-xl hover:bg-red-900/40 transition text-xs font-semibold flex items-center gap-1.5 text-red-400"
+                                                        >
+                                                            <span>🗑️</span> ลบ
+                                                        </button>
+                                                    </div>
+                                                </div>
+
+                                                {!acc.collapsed && (
+                                                    <div className="overflow-x-auto">
+                                                        <table className="fixed-table text-left text-xs">
+                                                            <colgroup>
+                                                                <col style={{ width: '110px' }} />
+                                                                <col style={{ width: '210px' }} />
+                                                                <col style={{ width: '110px' }} />
+                                                                <col style={{ width: '90px' }} />
+                                                                <col style={{ width: '85px' }} />
+                                                                <col style={{ width: '100px' }} />
+                                                                <col style={{ width: '90px' }} />
+                                                                <col style={{ width: '140px' }} />
+                                                                <col style={{ width: '140px' }} />
+                                                                <col style={{ width: '85px' }} />
+                                                                <col style={{ width: '100px' }} />
+                                                                <col style={{ width: '100px' }} />
+                                                            </colgroup>
+                                                            <thead>
+                                                                <tr className="border-b text-[10px] uppercase font-semibold transition" style={{ borderColor: borderCol, color: textSub, backgroundColor: isLight ? '#f1f5f9' : '#101010' }}>
+                                                                    <th className="py-3 px-3">โปรไฟล์</th>
+                                                                    <th className="py-3 px-3">อีเมล NETFLIX</th>
+                                                                    <th className="py-3 px-3">รหัส NETFLIX</th>
+                                                                    <th className="py-3 px-3">รหัส PIN</th>
+                                                                    <th className="py-3 px-3">สถานะ</th>
+                                                                    <th className="py-3 px-3">ลูกค้า</th>
+                                                                    <th className="py-3 px-3">ติดต่อ</th>
+                                                                    <th className="py-3 px-3">วันเริ่ม</th>
+                                                                    <th className="py-3 px-3">หมดอายุ</th>
+                                                                    <th className="py-3 px-3">ระยะเวลา</th>
+                                                                    <th className="py-3 px-3">อุปกรณ์</th>
+                                                                    <th className="py-3 px-3 text-right">จัดการ</th>
+                                                                </tr>
+                                                            </thead>
+                                                            <tbody className="divide-y font-medium" style={{ borderColor: borderCol }}>
+                                                                {acc.profiles.map(p => (
+                                                                    <tr key={p.id} className="transition">
+                                                                        <td className="py-3 px-3 font-bold truncate" style={{ color: textMain }}>{p.userLabel}</td>
+                                                                        <td className="py-3 px-3 font-mono font-bold truncate">
+                                                                            <button 
+                                                                                onClick={() => handleCopyText(acc.email, 'อีเมล')}
+                                                                                className="hover:underline text-left flex items-center gap-1 w-full"
+                                                                                style={{ color: textMain }}
+                                                                            >
+                                                                                <span className="truncate">{acc.email}</span>
+                                                                                <span className="text-[10px] text-gray-400 flex-shrink-0">📋</span>
+                                                                            </button>
+                                                                        </td>
+                                                                        <td className="py-3 px-3 font-mono font-bold truncate">
+                                                                            <button 
+                                                                                onClick={() => handleCopyText(acc.password, 'รหัสผ่าน')}
+                                                                                className="hover:underline text-left flex items-center gap-1 w-full"
+                                                                                style={{ color: isLight ? '#b91c1c' : '#fbbf24' }}
+                                                                            >
+                                                                                <span className="truncate">{acc.password}</span>
+                                                                                <span className="text-[10px] text-gray-400 flex-shrink-0">📋</span>
+                                                                            </button>
+                                                                        </td>
+                                                                        <td className="py-3 px-3 font-mono">
+                                                                            <div className="flex items-center gap-1">
+                                                                                <input 
+                                                                                    type="text" 
+                                                                                    value={p.pin !== undefined ? p.pin : '2008'} 
+                                                                                    onChange={(e) => handleUpdateProfilePin(acc.id, p.id, e.target.value)}
+                                                                                    className="w-14 bg-transparent border border-transparent hover:border-gray-400 focus:border-emerald-500 rounded px-1 py-0.5 font-mono text-xs outline-none transition font-bold" 
+                                                                                    style={{ color: textMain }}
+                                                                                />
+                                                                                <button 
+                                                                                    onClick={() => handleCopyText(p.pin !== undefined ? p.pin : '2008', 'รหัส PIN')}
+                                                                                    className="text-gray-400 hover:text-white p-0.5 text-xs"
+                                                                                >
+                                                                                    📋
+                                                                                </button>
+                                                                            </div>
+                                                                        </td>
+                                                                        <td className="py-3 px-3">
+                                                                            <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold inline-block text-center ${
+                                                                                p.status === 'ว่าง' ? 'bg-[#0f281e] text-emerald-400 border border-[#1b4332]' : 
+                                                                                p.status === 'หมดเวลา' ? 'bg-[#332200] text-amber-400 border border-[#664400]' : 
+                                                                                'bg-[#2a171a] text-red-400 border border-[#3a1d21]'
+                                                                            }`}>
+                                                                                {p.status}
+                                                                            </span>
+                                                                        </td>
+                                                                        <td className="py-3 px-3 font-bold truncate" style={{ color: textMain }} title={p.customer}>{p.customer}</td>
+                                                                        <td className={`py-3 px-3 font-bold truncate ${
+                                                                            p.contact === 'Facebook' ? 'text-blue-400' : 
+                                                                            p.contact === 'LINE' ? 'text-emerald-400' : 
+                                                                            'text-gray-400'
+                                                                        }`}>{p.contact}</td>
+                                                                        <td className="py-3 px-3 font-medium truncate text-[11px]" style={{ color: isLight ? '#334155' : '#cbd5e1' }}>{p.start}</td>
+                                                                        <td className="py-3 px-3 font-medium truncate text-[11px]" style={{ color: isLight ? '#334155' : '#cbd5e1' }}>{p.end}</td>
+                                                                        <td className="py-3 px-3 font-medium truncate" style={{ color: isLight ? '#334155' : '#cbd5e1' }}>{p.duration}</td>
+                                                                        <td className="py-3 px-3 font-medium truncate" style={{ color: isLight ? '#334155' : '#cbd5e1' }}>{p.device}</td>
+                                                                        <td className="py-3 px-3 text-right">
+                                                                            {p.status === 'ว่าง' ? (
+                                                                                <button onClick={() => {
+                                                                                    setSelectedProfileForCustomer({ accId: acc.id, profileId: p.id, userLabel: p.userLabel });
+                                                                                    setCustDate(getTodayDDMMYYYY());
+                                                                                    setCustTime(getCurrentTimeHHMM());
+                                                                                    setCustDuration('7 วัน');
+                                                                                    setCustDevice('มือถือ');
+                                                                                    setCustCustomPrice('');
+                                                                                    setIsAddCustomerOpen(true);
+                                                                                }} className="bg-[#e50914] hover:bg-[#b80710] text-white px-3 py-1 rounded-lg text-[11px] font-semibold transition shadow">
+                                                                                    + เพิ่มลูกค้า
+                                                                                </button>
+                                                                            ) : (
+                                                                                <button onClick={() => handleReturnProfile(acc.id, p.id, p.userLabel)} className="bg-amber-600 hover:bg-amber-700 text-white px-3.5 py-1 rounded-lg text-[11px] font-semibold transition shadow">
+                                                                                    คืนจอ
+                                                                                </button>
+                                                                            )}
+                                                                        </td>
+                                                                    </tr>
+                                                                ))}
+                                                            </tbody>
+                                                        </table>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        ))
+                                    )}
+                                </div>
+                            )}
+
+                            {activeTab === 'reviews' && (
+                                <div className="space-y-5">
+                                    <div className="grid grid-cols-2 md:grid-cols-6 gap-3.5">
+                                        <div className="border rounded-2xl p-5 shadow-xl transition" style={{ backgroundColor: bgCard, borderColor: borderCol }}>
+                                            <h3 className="text-2xl font-bold" style={{ color: textMain }}>{reviews.length}</h3>
+                                            <p className="text-xs mt-1" style={{ color: textSub }}>รีวิวทั้งหมด</p>
+                                        </div>
+                                    </div>
+
+                                    <div className="border rounded-2xl p-6 shadow-xl transition space-y-4" style={{ backgroundColor: bgCard, borderColor: borderCol }}>
+                                        <h3 className="font-bold text-xs" style={{ color: textMain }}>เพิ่มรีวิว</h3>
+
+                                        <form onSubmit={handleSaveNewReview} className="space-y-4">
+                                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                                <div>
+                                                    <label className="block text-[11px] mb-1.5" style={{ color: textSub }}>ลูกค้า</label>
+                                                    <input 
+                                                        type="text" 
+                                                        value={newRevCustomer} 
+                                                        onChange={e => setNewRevCustomer(e.target.value)} 
+                                                        required 
+                                                        placeholder="พิมพ์ชื่อลูกค้า..." 
+                                                        className="w-full border rounded-xl px-3.5 py-2.5 text-xs outline-none focus:border-[#e50914]" 
+                                                        style={{ backgroundColor: isLight ? '#f8fafc' : '#1c1c1c', borderColor: borderCol, color: textMain }} 
+                                                    />
+                                                </div>
+                                                <div>
+                                                    <label className="block text-[11px] mb-1.5" style={{ color: textSub }}>ช่องทาง (หมวดหมู่)</label>
+                                                    <select 
+                                                        value={newRevPlatform} 
+                                                        onChange={e => setNewRevPlatform(e.target.value)} 
+                                                        className="w-full border rounded-xl px-3.5 py-2.5 text-xs outline-none focus:border-[#e50914]" 
+                                                        style={{ backgroundColor: isLight ? '#f8fafc' : '#1c1c1c', borderColor: borderCol, color: textMain }}
+                                                    >
+                                                        <option value="LINE">LINE</option>
+                                                        <option value="Facebook">Facebook</option>
+                                                    </select>
+                                                </div>
+                                            </div>
+
+                                            <div className="flex items-center gap-2 flex-wrap">
+                                                <div className="flex items-center gap-0.5">
+                                                    {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((star) => (
+                                                        <button 
+                                                            key={star} 
+                                                            type="button" 
+                                                            onClick={() => setNewRevRating(star)}
+                                                            className={`text-sm md:text-base transition ${star <= newRevRating ? 'text-amber-400' : 'text-gray-600'}`}
+                                                        >
+                                                            ★
+                                                        </button>
+                                                    ))}
+                                                </div>
+                                                <span className="text-xs font-bold text-amber-400 ml-2">{newRevRating}/10</span>
+                                            </div>
+
+                                            <div>
+                                                <textarea 
+                                                    rows="3" 
+                                                    value={newRevComment} 
+                                                    onChange={e => setNewRevComment(e.target.value)} 
+                                                    required 
+                                                    placeholder="ความคิดเห็นของลูกค้า" 
+                                                    className="w-full border rounded-xl px-3.5 py-2.5 text-xs outline-none focus:border-[#e50914]" 
+                                                    style={{ backgroundColor: isLight ? '#f8fafc' : '#1c1c1c', borderColor: borderCol, color: textMain }} 
+                                                />
+                                            </div>
+
+                                            <div className="flex justify-end">
+                                                <button type="submit" className="bg-[#e50914] hover:bg-[#b80710] text-white px-6 py-2.5 rounded-xl text-xs font-semibold shadow">
+                                                    บันทึกรีวิว
+                                                </button>
+                                            </div>
+                                        </form>
+                                    </div>
+
+                                    <div className="space-y-4 pt-2">
+                                        <div className="flex justify-between items-center flex-wrap gap-3">
+                                            <h3 className="font-bold text-xs" style={{ color: textMain }}>รีวิวทั้งหมด ({filteredReviews.length})</h3>
+                                            
+                                            <div className="relative w-full md:w-80">
+                                                <span className="absolute inset-y-0 left-0 flex items-center pl-3.5 pointer-events-none text-gray-400">🔍</span>
+                                                <input 
+                                                    type="text" 
+                                                    value={searchQueryReviews} 
+                                                    onChange={e => setSearchQueryReviews(e.target.value)} 
+                                                    placeholder="ค้นหาจากชื่อลูกค้า" 
+                                                    className="w-full border rounded-xl pl-10 pr-4 py-2 text-xs outline-none focus:border-[#e50914] shadow-inner transition"
+                                                    style={{ backgroundColor: isLight ? '#ffffff' : '#181818', borderColor: borderCol, color: textMain }}
+                                                />
+                                                {searchQueryReviews && (
+                                                    <button onClick={() => setSearchQueryReviews('')} className="absolute inset-y-0 right-0 pr-3 flex items-center text-xs text-gray-400 hover:text-white">✕</button>
+                                                )}
+                                            </div>
+                                        </div>
+
+                                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                            {filteredReviews.length === 0 ? (
+                                                <div className="col-span-1 md:col-span-3 border rounded-2xl p-12 text-center shadow-xl" style={{ backgroundColor: bgCard, borderColor: borderCol }}>
+                                                    <p className="text-xs font-medium" style={{ color: textSub }}>ยังไม่มีรีวิวในระบบ</p>
+                                                </div>
+                                            ) : (
+                                                filteredReviews.map(r => (
+                                                    <div key={r.id} className="border rounded-2xl p-5 shadow-xl flex flex-col justify-between transition relative" style={{ backgroundColor: bgCard, borderColor: borderCol }}>
+                                                        <div>
+                                                            <div className="flex justify-between items-start mb-3">
+                                                                <div>
+                                                                    <h4 className="font-bold text-xs" style={{ color: textMain }}>{r.customer}</h4>
+                                                                    <span className={`text-[10px] font-bold ${r.platform === 'Facebook' ? 'text-blue-400' : 'text-emerald-400'}`}>
+                                                                        {r.platform || 'LINE'}
+                                                                    </span>
+                                                                </div>
+                                                                <div className="flex items-center gap-1">
+                                                                    <span className="text-amber-400 text-xs">{"★".repeat(Math.round(r.rating / 2))}</span>
+                                                                    <span className="text-[10px] text-amber-400 font-bold">({r.rating}/10)</span>
+                                                                </div>
+                                                            </div>
+                                                            <p className="text-xs leading-relaxed" style={{ color: textSub }}>"{r.comment}"</p>
+                                                        </div>
+                                                        <div className="mt-4 pt-3 border-t flex justify-between items-center text-[10px]" style={{ borderColor: borderCol, color: textSub }}>
+                                                            <span>วันที่: {r.dateStr}</span>
+                                                            <div className="flex items-center gap-3">
+                                                                <button 
+                                                                    onClick={() => {
+                                                                        setEditingReview({...r});
+                                                                        setIsEditReviewOpen(true);
+                                                                    }} 
+                                                                    className="text-amber-400 hover:text-amber-300 font-medium"
+                                                                >
+                                                                    แก้ไขรีวิว
+                                                                </button>
+                                                                <button onClick={() => handleDeleteReview(r.id)} className="text-red-400 hover:text-red-300 font-medium">ลบรีวิว</button>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                ))
+                                            )}
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+
+                            {activeTab === 'purchase_history' && (
+                                <div className="space-y-4">
+                                    <div className="flex justify-between items-center flex-wrap gap-3">
+                                        <h2 className="font-bold text-sm" style={{ color: textMain }}>ประวัติการซื้อ / เช่าทั้งหมด (ซิงค์ผ่าน Cloud)</h2>
+                                        
+                                        <div className="relative w-full md:w-80">
+                                            <span className="absolute inset-y-0 left-0 flex items-center pl-3.5 pointer-events-none text-gray-400">🔍</span>
+                                            <input 
+                                                type="text" 
+                                                value={searchQueryHistory} 
+                                                onChange={e => setSearchQueryHistory(e.target.value)} 
+                                                placeholder="ค้นหาชื่อลูกค้า..." 
+                                                className="w-full border rounded-xl pl-10 pr-4 py-2 text-xs outline-none focus:border-[#e50914] shadow-inner transition"
+                                                style={{ backgroundColor: isLight ? '#ffffff' : '#181818', borderColor: borderCol, color: textMain }}
+                                            />
+                                            {searchQueryHistory && (
+                                                <button onClick={() => setSearchQueryHistory('')} className="absolute inset-y-0 right-0 pr-3 flex items-center text-xs text-gray-400 hover:text-white">✕</button>
+                                            )}
+                                        </div>
+                                    </div>
+
+                                    <div className="border rounded-2xl overflow-hidden shadow-xl transition" style={{ backgroundColor: bgCard, borderColor: borderCol }}>
+                                        <div className="overflow-x-auto">
+                                            <table className="w-full text-left text-xs">
+                                                <thead>
+                                                    <tr className="border-b text-[10px] uppercase font-semibold transition" style={{ borderColor: borderCol, color: textSub, backgroundColor: isLight ? '#f1f5f9' : '#101010' }}>
+                                                        <th className="py-3 px-4">วันที่ทำรายการ</th>
+                                                        <th className="py-3 px-4">ชื่อลูกค้า</th>
+                                                        <th className="py-3 px-4">ช่องทางติดต่อ</th>
+                                                        <th className="py-3 px-4">อุปกรณ์</th>
+                                                        <th className="py-3 px-4">ระยะเวลา</th>
+                                                        <th className="py-3 px-4 text-right">ยอดเงิน (บาท)</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody className="divide-y font-medium" style={{ borderColor: borderCol }}>
+                                                    {filteredSales.length === 0 ? (
+                                                        <tr>
+                                                            <td colSpan="6" className="py-12 text-center" style={{ color: textSub }}>ยังไม่มีประวัติการซื้อในระบบ</td>
+                                                        </tr>
+                                                    ) : (
+                                                        filteredSales.map(s => (
+                                                            <tr key={s.id} className="transition">
+                                                                <td className="py-3 px-4" style={{ color: textSub }}>{s.dateStr}</td>
+                                                                <td className="py-3 px-4 font-bold" style={{ color: textMain }}>{s.customer}</td>
+                                                                <td className={`py-3 px-4 font-bold ${s.contact === 'Facebook' ? 'text-blue-400' : s.contact === 'LINE' ? 'text-emerald-400' : 'text-gray-400'}`}>{s.contact}</td>
+                                                                <td className="py-3 px-4">
+                                                                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-950 text-emerald-400 border border-emerald-900">{s.device}</span>
+                                                                </td>
+                                                                <td className="py-3 px-4" style={{ color: textSub }}>{s.duration}</td>
+                                                                <td className="py-3 px-4 text-right font-bold text-emerald-400">฿{s.amount}</td>
+                                                            </tr>
+                                                        ))
+                                                    )}
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+
+                            {activeTab === 'revenue' && (
+                                <div className="space-y-5">
+                                    <h2 className="font-bold text-sm" style={{ color: textMain }}>รายงานรายได้ร้าน</h2>
+                                    
+                                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                                        <div className="border rounded-2xl p-5 shadow-xl transition" style={{ backgroundColor: bgCard, borderColor: borderCol }}>
+                                            <p className="text-xs mb-1.5" style={{ color: textSub }}>1 วันล่าสุด (วันนี้)</p>
+                                            <h3 className="text-2xl font-bold text-emerald-400">฿{revMetrics.todayRev.toLocaleString()}</h3>
+                                        </div>
+                                        <div className="border rounded-2xl p-5 shadow-xl transition" style={{ backgroundColor: bgCard, borderColor: borderCol }}>
+                                            <p className="text-xs mb-1.5" style={{ color: textSub }}>7 วันล่าสุด</p>
+                                            <h3 className="text-2xl font-bold text-emerald-400">฿{revMetrics.sevenDaysRev.toLocaleString()}</h3>
+                                        </div>
+                                        <div className="border rounded-2xl p-5 shadow-xl transition" style={{ backgroundColor: bgCard, borderColor: borderCol }}>
+                                            <p className="text-xs mb-1.5" style={{ color: textSub }}>30 วันล่าสุด</p>
+                                            <h3 className="text-2xl font-bold text-emerald-400">฿{revMetrics.thirtyDaysRev.toLocaleString()}</h3>
+                                        </div>
+                                        <div className="border rounded-2xl p-5 shadow-xl transition" style={{ backgroundColor: bgCard, borderColor: borderCol }}>
+                                            <p className="text-xs mb-1.5" style={{ color: textSub }}>ยอดขายรวมทั้งหมด ({revMetrics.totalCount} รายการ)</p>
+                                            <h3 className="text-2xl font-bold text-red-500">฿{revMetrics.totalRev.toLocaleString()}</h3>
+                                        </div>
+                                    </div>
+
+                                    <div className="space-y-3 pt-2">
+                                        <div className="flex justify-between items-center flex-wrap gap-3">
+                                            <h3 className="font-bold text-xs" style={{ color: textMain }}>รายการขายล่าสุด</h3>
+                                            
+                                            <div className="relative w-full md:w-80">
+                                                <span className="absolute inset-y-0 left-0 flex items-center pl-3.5 pointer-events-none text-gray-400">🔍</span>
+                                                <input 
+                                                    type="text" 
+                                                    value={searchQueryRevenue} 
+                                                    onChange={e => setSearchQueryRevenue(e.target.value)} 
+                                                    placeholder="ค้นหาชื่อลูกค้า..." 
+                                                    className="w-full border rounded-xl pl-10 pr-4 py-2 text-xs outline-none focus:border-[#e50914] shadow-inner transition"
+                                                    style={{ backgroundColor: isLight ? '#ffffff' : '#181818', borderColor: borderCol, color: textMain }}
+                                                />
+                                                {searchQueryRevenue && (
+                                                    <button onClick={() => setSearchQueryRevenue('')} className="absolute inset-y-0 right-0 pr-3 flex items-center text-xs text-gray-400 hover:text-white">✕</button>
+                                                )}
+                                            </div>
+                                        </div>
+
+                                        <div className="border rounded-2xl overflow-hidden shadow-xl transition" style={{ backgroundColor: bgCard, borderColor: borderCol }}>
+                                            <div className="overflow-x-auto">
+                                                <table className="w-full text-left text-xs">
+                                                    <thead>
+                                                        <tr className="border-b text-[10px] uppercase font-semibold transition" style={{ borderColor: borderCol, color: textSub, backgroundColor: isLight ? '#f1f5f9' : '#101010' }}>
+                                                            <th className="py-3 px-4">วันที่</th>
+                                                            <th className="py-3 px-4">ลูกค้า</th>
+                                                            <th className="py-3 px-4">อุปกรณ์ที่เช่า</th>
+                                                            <th className="py-3 px-4">จำนวนวัน</th>
+                                                            <th className="py-3 px-4 text-right">ยอดขาย</th>
+                                                        </tr>
+                                                    </thead>
+                                                    <tbody className="divide-y font-medium" style={{ borderColor: borderCol }}>
+                                                        {filteredRevenueSales.length === 0 ? (
+                                                            <tr>
+                                                                <td colSpan="5" className="py-8 text-center" style={{ color: textSub }}>ยังไม่มีรายการขายในระบบ</td>
+                                                            </tr>
+                                                        ) : (
+                                                            filteredRevenueSales.map(s => (
+                                                                <tr key={s.id} className="transition">
+                                                                    <td className="py-3 px-4" style={{ color: textSub }}>{s.dateStr}</td>
+                                                                    <td className="py-3 px-4 font-bold" style={{ color: textMain }}>{s.customer}</td>
+                                                                    <td className="py-3 px-4 font-bold text-emerald-400">{s.device}</td>
+                                                                    <td className="py-3 px-4" style={{ color: textSub }}>{s.duration}</td>
+                                                                    <td className="py-3 px-4 text-right font-bold text-emerald-400">฿{s.amount}</td>
+                                                                </tr>
+                                                            ))
+                                                        )}
+                                                    </tbody>
+                                                </table>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+
+                            {activeTab === 'shop_settings' && (
+                                <div className="space-y-5 max-w-5xl pb-10">
+                                    <h2 className="font-bold text-sm" style={{ color: textMain }}>ตั้งค่าร้านค้าและสำรองข้อมูล (Cloud Synced)</h2>
+                                    
+                                    <div className="border rounded-2xl p-5 space-y-4 shadow-xl transition border-emerald-500/30" style={{ backgroundColor: bgCard }}>
+                                        <div className="flex items-center gap-2">
+                                            <span className="text-base">💾</span>
+                                            <div>
+                                                <h3 className="font-bold text-xs text-emerald-400">ระบบสำรองและกู้คืนข้อมูลร้านค้า</h3>
+                                                <p className="text-[10px] mt-0.5" style={{ color: textSub }}>ข้อมูลซิงค์ขึ้น Cloud อัตโนมัติ และสามารถดาวน์โหลด/นำเข้าไฟล์ `.json` เผื่อสำรองไว้ได้</p>
+                                            </div>
+                                        </div>
+                                        
+                                        <div className="flex items-center gap-3 pt-2 flex-wrap">
+                                            <button 
+                                                onClick={handleExportBackup}
+                                                className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2.5 rounded-xl text-xs font-semibold shadow transition flex items-center gap-2"
+                                            >
+                                                <span>📥</span> ดาวน์โหลดไฟล์สำรองข้อมูล (.JSON)
+                                            </button>
+
+                                            <button 
+                                                onClick={() => fileInputRef.current.click()}
+                                                className="border hover:bg-[#222] text-white px-4 py-2.5 rounded-xl text-xs font-semibold shadow transition flex items-center gap-2"
+                                                style={{ borderColor: borderCol, color: textMain }}
+                                            >
+                                                <span>📤</span> นำเข้าไฟล์สำรองข้อมูล (Restore)
+                                            </button>
+                                            <input 
+                                                type="file" 
+                                                ref={fileInputRef} 
+                                                onChange={handleImportBackup} 
+                                                accept=".json" 
+                                                className="hidden" 
+                                            />
+                                        </div>
+                                    </div>
+
+                                    {/* รูปแบบการแสดงผล (ธีมเริ่มต้นของระบบ) */}
+                                    <div className="border rounded-2xl p-5 space-y-4 shadow-xl transition" style={{ backgroundColor: bgCard, borderColor: borderCol }}>
+                                        <h3 className="font-bold text-xs" style={{ color: textMain }}>รูปแบบการแสดงผล</h3>
+                                        <div>
+                                            <p className="text-xs font-semibold mb-1" style={{ color: textMain }}>ธีมเริ่มต้นของระบบ</p>
+                                            <p className="text-[10px] mb-3" style={{ color: textSub }}>ค่าเริ่มต้นแนะนำ: อัตโนมัติ (ตามอุปกรณ์)</p>
+                                            <div className="flex items-center gap-3">
+                                                <span className="text-[11px]" style={{ color: textMain }}>สลับธีม:</span>
+                                                <div className="flex items-center border rounded-full p-0.5" style={{ backgroundColor: isLight ? '#f1f5f9' : '#1c1c1c', borderColor: borderCol }}>
+                                                    <button 
+                                                        onClick={() => setThemeMode('light')} 
+                                                        className={`px-3 py-1 rounded-full flex items-center gap-1 text-xs transition ${isLight ? 'bg-white shadow text-amber-500 font-bold' : 'text-gray-400 hover:text-white'}`}
+                                                    >☀️ สว่าง</button>
+                                                    <button 
+                                                        onClick={() => setThemeMode('dark')} 
+                                                        className={`px-3 py-1 rounded-full flex items-center gap-1 text-xs transition ${!isLight ? 'bg-[#282828] shadow text-amber-400 font-bold' : 'text-gray-400'}`}
+                                                    >🌙 มืด</button>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    {/* การแจ้งเตือนแอดมิน (ทำงานจริงอัตโนมัติ) */}
+                                    <div className="border rounded-2xl p-5 space-y-4 shadow-xl transition" style={{ backgroundColor: bgCard, borderColor: borderCol }}>
+                                        <div>
+                                            <h3 className="font-bold text-xs text-amber-400">การแจ้งเตือนแอดมิน (ทำงานจริงอัตโนมัติ)</h3>
+                                            <p className="text-[10px] mt-1 leading-relaxed" style={{ color: textSub }}>
+                                                ระบบจะตรวจสอบสถานะวันหมดอายุทุกๆ 1 นาที เมื่อมีโปรไฟล์หมดเวลาแล้ว ระบบจะส่งเสียงเตือนผ่านลำโพงพร้อมเด้งป๊อปอัปแจ้งเตือนบนเบราว์เซอร์อัตโนมัติทันที
+                                            </p>
+                                        </div>
+
+                                        <div className="flex justify-between items-center pt-2 flex-wrap gap-3">
+                                            <span className="text-xs font-bold" style={{ color: textMain }}>
+                                                สถานะการอนุญาต: <span className={notifPermission === 'granted' ? 'text-emerald-400' : 'text-amber-400'}>
+                                                    {notifPermission === 'granted' ? 'เปิดใช้งานแล้ว (ใช้งานได้จริง)' : notifPermission === 'denied' ? 'ถูกปฏิเสธการแจ้งเตือน' : 'ยังไม่ได้ขอสิทธิ์'}
+                                                </span>
+                                            </span>
+
+                                            <div className="flex items-center gap-2">
+                                                <button onClick={() => {
+                                                    playAlertSound();
+                                                    alert('ทดสอบเสียงเตือนสำเร็จ!');
+                                                }} className="bg-[#1a1a1a] border border-[#333] hover:bg-[#282828] text-white px-4 py-2 rounded-xl text-xs font-semibold transition shadow flex items-center gap-1.5">
+                                                    <span>🔊</span> ทดสอบเสียงเตือน
+                                                </button>
+
+                                                <button onClick={requestNotificationPermission} className="bg-[#e50914] hover:bg-[#b80710] text-white px-4 py-2 rounded-xl text-xs font-semibold shadow transition flex items-center gap-1.5">
+                                                    <span>🔔</span> ขอสิทธิ์ Notification
+                                                </button>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <div className="border rounded-2xl p-5 space-y-4 shadow-xl transition" style={{ backgroundColor: bgCard, borderColor: borderCol }}>
+                                        <h3 className="font-bold text-xs" style={{ color: textMain }}>ข้อมูลร้าน</h3>
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                            <div>
+                                                <label className="block text-[11px] mb-1.5" style={{ color: textSub }}>ชื่อร้าน</label>
+                                                <input 
+                                                    type="text" 
+                                                    value={shopSettings.shopName} 
+                                                    onChange={e => updateStateAndSync({...shopSettings, shopName: e.target.value}, 'shopSettings')} 
+                                                    className="w-full border rounded-xl px-3.5 py-2 text-xs outline-none focus:border-[#e50914]" 
+                                                    style={{ backgroundColor: isLight ? '#f8fafc' : '#1c1c1c', borderColor: borderCol, color: textMain }} 
+                                                />
+                                            </div>
+                                            <div>
+                                                <label className="block text-[11px] mb-1.5" style={{ color: textSub }}>ช่องทางติดต่อ LINE (ลิงก์)</label>
+                                                <input 
+                                                    type="text" 
+                                                    value={shopSettings.lineLink} 
+                                                    onChange={e => updateStateAndSync({...shopSettings, lineLink: e.target.value}, 'shopSettings')} 
+                                                    className="w-full border rounded-xl px-3.5 py-2 text-xs outline-none focus:border-[#e50914]" 
+                                                    style={{ backgroundColor: isLight ? '#f8fafc' : '#1c1c1c', borderColor: borderCol, color: textMain }} 
+                                                />
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    {/* แพ็กเกจและราคา */}
+                                    <div className="border rounded-2xl p-5 space-y-6 shadow-xl transition" style={{ backgroundColor: bgCard, borderColor: borderCol }}>
+                                        <div>
+                                            <h3 className="font-bold text-xs" style={{ color: textMain }}>แพ็กเกจและราคา</h3>
+                                            <p className="text-[10px] mt-0.5" style={{ color: textSub }}>แก้ไขชื่อ/จำนวนวัน/ราคาได้โดยตรง ระบบจะนำราคานี้คำนวณยอดขายทุกจุดในเว็บทันที</p>
+                                        </div>
+
+                                        {/* หมวดที่ 1: มือถือ / ไอแพด / คอมพิวเตอร์ */}
+                                        <div className="space-y-3">
+                                            <div className="flex justify-between items-center">
+                                                <span className="font-bold text-xs text-emerald-400">📱 มือถือ / ไอแพด / คอมพิวเตอร์</span>
+                                                <button onClick={() => {
+                                                    const updated = [...shopSettings.mobilePackages, { id: Date.now(), name: 'ใหม่', days: 3, price: 30 }];
+                                                    updateStateAndSync({...shopSettings, mobilePackages: updated}, 'shopSettings');
+                                                }} className="border px-3 py-1 rounded-lg text-[10px] font-bold hover:bg-[#222]" style={{ borderColor: borderCol, color: textMain }}>+ เพิ่มแพ็กเกจ</button>
+                                            </div>
+                                            <div className="space-y-2.5">
+                                                {shopSettings.mobilePackages.map((pkg, idx) => (
+                                                    <div key={pkg.id || idx} className="border rounded-xl p-3 flex items-center gap-3 transition flex-wrap md:flex-nowrap" style={{ backgroundColor: isLight ? '#f8fafc' : '#141414', borderColor: borderCol }}>
+                                                        <div className="flex-1 min-w-[120px]">
+                                                            <label className="block text-[10px] mb-1" style={{ color: textSub }}>ชื่อแพ็กเกจ</label>
+                                                            <input 
+                                                                type="text" 
+                                                                value={pkg.name} 
+                                                                onChange={e => {
+                                                                    const updated = [...shopSettings.mobilePackages];
+                                                                    updated[idx].name = e.target.value;
+                                                                    updateStateAndSync({...shopSettings, mobilePackages: updated}, 'shopSettings');
+                                                                }} 
+                                                                className="w-full border rounded-lg px-2.5 py-1.5 text-xs outline-none" 
+                                                                style={{ backgroundColor: isLight ? '#ffffff' : '#1c1c1c', borderColor: borderCol, color: textMain }} 
+                                                            />
+                                                        </div>
+                                                        <div className="w-28">
+                                                            <label className="block text-[10px] mb-1" style={{ color: textSub }}>จำนวนวัน</label>
+                                                            <input 
+                                                                type="number" 
+                                                                value={pkg.days} 
+                                                                onChange={e => {
+                                                                    const updated = [...shopSettings.mobilePackages];
+                                                                    updated[idx].days = parseInt(e.target.value) || 1;
+                                                                    updateStateAndSync({...shopSettings, mobilePackages: updated}, 'shopSettings');
+                                                                }} 
+                                                                className="w-full border rounded-lg px-2.5 py-1.5 text-xs outline-none" 
+                                                                style={{ backgroundColor: isLight ? '#ffffff' : '#1c1c1c', borderColor: borderCol, color: textMain }} 
+                                                            />
+                                                        </div>
+                                                        <div className="w-28">
+                                                            <label className="block text-[10px] mb-1" style={{ color: textSub }}>ราคา (บาท)</label>
+                                                            <input 
+                                                                type="number" 
+                                                                value={pkg.price} 
+                                                                onChange={e => {
+                                                                    const updated = [...shopSettings.mobilePackages];
+                                                                    updated[idx].price = parseFloat(e.target.value) || 0;
+                                                                    updateStateAndSync({...shopSettings, mobilePackages: updated}, 'shopSettings');
+                                                                }} 
+                                                                className="w-full border rounded-lg px-2.5 py-1.5 text-xs outline-none" 
+                                                                style={{ backgroundColor: isLight ? '#ffffff' : '#1c1c1c', borderColor: borderCol, color: textMain }} 
+                                                            />
+                                                        </div>
+                                                        <div className="pt-4">
+                                                            <button onClick={() => {
+                                                                const updated = shopSettings.mobilePackages.filter((_, i) => i !== idx);
+                                                                updateStateAndSync({...shopSettings, mobilePackages: updated}, 'shopSettings');
+                                                            }} className="bg-red-950/40 border border-red-900/60 hover:bg-red-900/60 text-red-400 px-3 py-1.5 rounded-lg text-xs font-semibold">ลบ</button>
+                                                        </div>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        </div>
+
+                                        {/* หมวดที่ 2: Smart TV / กล่อง TV / Android TV */}
+                                        <div className="space-y-3 pt-2">
+                                            <div className="flex justify-between items-center">
+                                                <span className="font-bold text-xs text-amber-400">📺 Smart TV / กล่อง TV / Android TV</span>
+                                                <button onClick={() => {
+                                                    const updated = [...shopSettings.tvPackages, { id: Date.now(), name: 'ใหม่', days: 3, price: 30 }];
+                                                    updateStateAndSync({...shopSettings, tvPackages: updated}, 'shopSettings');
+                                                }} className="border px-3 py-1 rounded-lg text-[10px] font-bold hover:bg-[#222]" style={{ borderColor: borderCol, color: textMain }}>+ เพิ่มแพ็กเกจ</button>
+                                            </div>
+                                            <div className="space-y-2.5">
+                                                {shopSettings.tvPackages.map((pkg, idx) => (
+                                                    <div key={pkg.id || idx} className="border rounded-xl p-3 flex items-center gap-3 transition flex-wrap md:flex-nowrap" style={{ backgroundColor: isLight ? '#f8fafc' : '#141414', borderColor: borderCol }}>
+                                                        <div className="flex-1 min-w-[120px]">
+                                                            <label className="block text-[10px] mb-1" style={{ color: textSub }}>ชื่อแพ็กเกจ</label>
+                                                            <input 
+                                                                type="text" 
+                                                                value={pkg.name} 
+                                                                onChange={e => {
+                                                                    const updated = [...shopSettings.tvPackages];
+                                                                    updated[idx].name = e.target.value;
+                                                                    updateStateAndSync({...shopSettings, tvPackages: updated}, 'shopSettings');
+                                                                }} 
+                                                                className="w-full border rounded-lg px-2.5 py-1.5 text-xs outline-none" 
+                                                                style={{ backgroundColor: isLight ? '#ffffff' : '#1c1c1c', borderColor: borderCol, color: textMain }} 
+                                                            />
+                                                        </div>
+                                                        <div className="w-28">
+                                                            <label className="block text-[10px] mb-1" style={{ color: textSub }}>จำนวนวัน</label>
+                                                            <input 
+                                                                type="number" 
+                                                                value={pkg.days} 
+                                                                onChange={e => {
+                                                                    const updated = [...shopSettings.tvPackages];
+                                                                    updated[idx].days = parseInt(e.target.value) || 1;
+                                                                    updateStateAndSync({...shopSettings, tvPackages: updated}, 'shopSettings');
+                                                                }} 
+                                                                className="w-full border rounded-lg px-2.5 py-1.5 text-xs outline-none" 
+                                                                style={{ backgroundColor: isLight ? '#ffffff' : '#1c1c1c', borderColor: borderCol, color: textMain }} 
+                                                            />
+                                                        </div>
+                                                        <div className="w-28">
+                                                            <label className="block text-[10px] mb-1" style={{ color: textSub }}>ราคา (บาท)</label>
+                                                            <input 
+                                                                type="number" 
+                                                                value={pkg.price} 
+                                                                onChange={e => {
+                                                                    const updated = [...shopSettings.tvPackages];
+                                                                    updated[idx].price = parseFloat(e.target.value) || 0;
+                                                                    updateStateAndSync({...shopSettings, tvPackages: updated}, 'shopSettings');
+                                                                }} 
+                                                                className="w-full border rounded-lg px-2.5 py-1.5 text-xs outline-none" 
+                                                                style={{ backgroundColor: isLight ? '#ffffff' : '#1c1c1c', borderColor: borderCol, color: textMain }} 
+                                                            />
+                                                        </div>
+                                                        <div className="pt-4">
+                                                            <button onClick={() => {
+                                                                const updated = shopSettings.tvPackages.filter((_, i) => i !== idx);
+                                                                updateStateAndSync({...shopSettings, tvPackages: updated}, 'shopSettings');
+                                                            }} className="bg-red-950/40 border border-red-900/60 hover:bg-red-900/60 text-red-400 px-3 py-1.5 rounded-lg text-xs font-semibold">ลบ</button>
+                                                        </div>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        </div>
+
+                                        <div className="pt-4 flex justify-end">
+                                            <button onClick={() => alert('บันทึกการตั้งค่าร้านค้าขึ้น Cloud สำเร็จเรียบร้อยแล้ว!')} className="bg-[#e50914] hover:bg-[#b80710] text-white px-6 py-2.5 rounded-xl text-xs font-semibold shadow transition">
+                                                บันทึกการตั้งค่า
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+
+                        </main>
+                    </div>
+
+                    {isEditReviewOpen && editingReview && (
+                        <div className="fixed inset-0 bg-black/85 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+                            <div className="border rounded-2xl w-full max-w-md shadow-2xl p-6 space-y-4" style={{ backgroundColor: bgCard, borderColor: borderCol }}>
+                                <div className="flex justify-between items-center border-b pb-3" style={{ borderColor: borderCol }}>
+                                    <h3 className="font-bold text-sm" style={{ color: textMain }}>แก้ไขรีวิว</h3>
+                                    <button onClick={() => setIsEditReviewOpen(false)} className="text-gray-400 hover:text-white">✕</button>
+                                </div>
+                                <form onSubmit={handleUpdateReview} className="space-y-3">
+                                    <input type="text" value={editingReview.customer} onChange={e => setEditingReview({...editingReview, customer: e.target.value})} className="w-full border rounded-xl px-3.5 py-2 text-xs" style={{ backgroundColor: isLight ? '#f8fafc' : '#1c1c1c', borderColor: borderCol, color: textMain }} />
+                                    <textarea rows="3" value={editingReview.comment} onChange={e => setEditingReview({...editingReview, comment: e.target.value})} className="w-full border rounded-xl px-3.5 py-2 text-xs" style={{ backgroundColor: isLight ? '#f8fafc' : '#1c1c1c', borderColor: borderCol, color: textMain }} />
+                                    <div className="flex justify-end gap-2 pt-2">
+                                        <button type="button" onClick={() => setIsEditReviewOpen(false)} className="border px-4 py-2 rounded-xl text-xs" style={{ borderColor: borderCol, color: textMain }}>ยกเลิก</button>
+                                        <button type="submit" className="bg-[#e50914] text-white px-5 py-2 rounded-xl text-xs font-semibold">บันทึก</button>
+                                    </div>
+                                </form>
+                            </div>
+                        </div>
+                    )}
+
+                    {isNotifModalOpen && (
+                        <div className="fixed inset-0 bg-black/85 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+                            <div className="border rounded-2xl w-full max-w-lg shadow-2xl p-6 space-y-4" style={{ backgroundColor: bgCard, borderColor: borderCol }}>
+                                <div className="flex justify-between items-center border-b pb-3" style={{ borderColor: borderCol }}>
+                                    <h3 className="font-bold text-sm" style={{ color: textMain }}>รายการจอที่หมดเวลาแล้ว</h3>
+                                    <button onClick={() => setIsNotifModalOpen(false)} className="text-gray-400 hover:text-white">✕</button>
+                                </div>
+                                <div className="max-h-80 overflow-y-auto space-y-2">
+                                    {expiredList.length === 0 ? <p className="text-xs text-emerald-400 text-center py-6">ไม่มีจอหมดเวลา</p> : (
+                                        expiredList.map((item, idx) => (
+                                            <div key={idx} className="flex justify-between items-center p-3 border rounded-xl" style={{ borderColor: borderCol, backgroundColor: isLight ? '#f8fafc' : '#1a1a1a' }}>
+                                                <div>
+                                                    <p className="font-bold text-xs" style={{ color: textMain }}>{item.userLabel} (ลูกค้า: {item.customer})</p>
+                                                    <p className="text-[10px] text-amber-400">หมดอายุ: {item.end}</p>
+                                                </div>
+                                                <button onClick={() => { handleReturnProfile(item.accId, item.id, item.userLabel); setIsNotifModalOpen(false); }} className="bg-amber-600 text-white px-3 py-1 rounded text-xs font-bold">คืนจอ</button>
+                                            </div>
+                                        ))
+                                    )}
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {isAddModalOpen && (
+                        <div className="fixed inset-0 bg-black/85 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+                            <div className="border rounded-2xl w-full max-w-md shadow-2xl p-6 space-y-4" style={{ backgroundColor: bgCard, borderColor: borderCol }}>
+                                <h3 className="font-bold text-sm" style={{ color: textMain }}>เพิ่มบัญชี Netflix ใหม่</h3>
+                                <form onSubmit={handleCreateAccount} className="space-y-3">
+                                    <input type="text" value={formName} onChange={e => setFormName(e.target.value)} placeholder="ชื่อบัญชี (เช่น Netflix Hub)" className="w-full border rounded-xl px-3.5 py-2 text-xs" style={{ backgroundColor: isLight ? '#f8fafc' : '#1c1c1c', borderColor: borderCol, color: textMain }} />
+                                    <input type="email" value={formEmail} onChange={e => setFormEmail(e.target.value)} required placeholder="อีเมล Netflix" className="w-full border rounded-xl px-3.5 py-2 text-xs" style={{ backgroundColor: isLight ? '#f8fafc' : '#1c1c1c', borderColor: borderCol, color: textMain }} />
+                                    <input type="text" value={formPassword} onChange={e => setFormPassword(e.target.value)} required placeholder="รหัสผ่าน" className="w-full border rounded-xl px-3.5 py-2 text-xs" style={{ backgroundColor: isLight ? '#f8fafc' : '#1c1c1c', borderColor: borderCol, color: textMain }} />
+                                    <input type="number" value={formProfilesCount} onChange={e => setFormProfilesCount(e.target.value)} min="1" max="10" className="w-full border rounded-xl px-3.5 py-2 text-xs" style={{ backgroundColor: isLight ? '#f8fafc' : '#1c1c1c', borderColor: borderCol, color: textMain }} />
+                                    <div className="flex justify-end gap-2 pt-2">
+                                        <button type="button" onClick={() => setIsAddModalOpen(false)} className="border px-4 py-2 rounded-xl text-xs" style={{ borderColor: borderCol, color: textMain }}>ยกเลิก</button>
+                                        <button type="submit" className="bg-[#e50914] text-white px-5 py-2 rounded-xl text-xs font-semibold">เพิ่มบัญชี</button>
+                                    </div>
+                                </form>
+                            </div>
+                        </div>
+                    )}
+
+                    {isEditModalOpen && editingAccount && (
+                        <div className="fixed inset-0 bg-black/85 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+                            <div className="border rounded-2xl w-full max-w-md shadow-2xl p-6 space-y-4" style={{ backgroundColor: bgCard, borderColor: borderCol }}>
+                                <h3 className="font-bold text-sm" style={{ color: textMain }}>แก้ไขบัญชี Netflix</h3>
+                                <form onSubmit={handleUpdateAccount} className="space-y-3">
+                                    <input type="text" value={editingAccount.name} onChange={e => setEditingAccount({...editingAccount, name: e.target.value})} className="w-full border rounded-xl px-3.5 py-2 text-xs" style={{ backgroundColor: isLight ? '#f8fafc' : '#1c1c1c', borderColor: borderCol, color: textMain }} />
+                                    <input type="email" value={editingAccount.email} onChange={e => setEditingAccount({...editingAccount, email: e.target.value})} required className="w-full border rounded-xl px-3.5 py-2 text-xs" style={{ backgroundColor: isLight ? '#f8fafc' : '#1c1c1c', borderColor: borderCol, color: textMain }} />
+                                    <input type="text" value={editingAccount.password} onChange={e => setEditingAccount({...editingAccount, password: e.target.value})} required className="w-full border rounded-xl px-3.5 py-2 text-xs" style={{ backgroundColor: isLight ? '#f8fafc' : '#1c1c1c', borderColor: borderCol, color: textMain }} />
+                                    <div className="flex justify-end gap-2 pt-2">
+                                        <button type="button" onClick={() => setIsEditModalOpen(false)} className="border px-4 py-2 rounded-xl text-xs" style={{ borderColor: borderCol, color: textMain }}>ยกเลิก</button>
+                                        <button type="submit" className="bg-[#e50914] text-white px-5 py-2 rounded-xl text-xs font-semibold">บันทึก</button>
+                                    </div>
+                                </form>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* MODAL: เพิ่มลูกค้าเข้าโปรไฟล์ */}
+                    {isAddCustomerOpen && (
+                        <div className="fixed inset-0 bg-black/85 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+                            <div className="border rounded-2xl w-full max-w-lg shadow-2xl p-6 space-y-4 max-h-[90vh] overflow-y-auto custom-scrollbar" style={{ backgroundColor: bgCard, borderColor: borderCol }}>
+                                <div className="flex justify-between items-center border-b pb-3" style={{ borderColor: borderCol }}>
+                                    <div>
+                                        <h3 className="font-bold text-sm text-white">เพิ่มลูกค้าเข้าโปรไฟล์</h3>
+                                        <p className="text-[10px] text-emerald-400 mt-0.5">กำลังเพิ่มเข้า {selectedProfileForCustomer?.userLabel}</p>
+                                    </div>
+                                    <button onClick={() => setIsAddCustomerOpen(false)} className="text-gray-400 hover:text-white text-sm">✕</button>
+                                </div>
+                                <form onSubmit={handleSaveCustomer} className="space-y-4">
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                        <div>
+                                            <label className="block text-[11px] mb-1.5 text-gray-400">ชื่อลูกค้า</label>
+                                            <input 
+                                                type="text" 
+                                                value={custName} 
+                                                onChange={e => setCustName(e.target.value)} 
+                                                required 
+                                                placeholder="ชื่อลูกค้า" 
+                                                className="w-full border rounded-xl px-3.5 py-2.5 text-xs outline-none focus:border-[#e50914]" 
+                                                style={{ backgroundColor: isLight ? '#f8fafc' : '#1c1c1c', borderColor: borderCol, color: textMain }} 
+                                            />
+                                        </div>
+                                        <div>
+                                            <label className="block text-[11px] mb-1.5 text-gray-400">ช่องทางติดต่อ</label>
+                                            <select 
+                                                value={custContact} 
+                                                onChange={e => setCustContact(e.target.value)} 
+                                                className="w-full border rounded-xl px-3.5 py-2.5 text-xs outline-none focus:border-[#e50914]" 
+                                                style={{ backgroundColor: isLight ? '#f8fafc' : '#1c1c1c', borderColor: borderCol, color: textMain }}
+                                            >
+                                                <option value="LINE">LINE</option>
+                                                <option value="Facebook">Facebook</option>
+                                            </select>
+                                        </div>
+                                    </div>
+
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                        <div>
+                                            <label className="block text-[11px] mb-1.5 text-gray-400">วันที่เริ่มต้น</label>
+                                            <input 
+                                                type="text" 
+                                                value={custDate} 
+                                                onChange={e => setCustDate(e.target.value)} 
+                                                placeholder="DD/MM/YYYY" 
+                                                className="w-full border rounded-xl px-3.5 py-2.5 text-xs outline-none focus:border-[#e50914]" 
+                                                style={{ backgroundColor: isLight ? '#f8fafc' : '#1c1c1c', borderColor: borderCol, color: textMain }} 
+                                            />
+                                        </div>
+                                        <div>
+                                            <label className="block text-[11px] mb-1.5 text-gray-400">เวลาเริ่มต้น</label>
+                                            <input 
+                                                type="text" 
+                                                value={custTime} 
+                                                onChange={e => setCustTime(e.target.value)} 
+                                                placeholder="HH:MM" 
+                                                className="w-full border rounded-xl px-3.5 py-2.5 text-xs outline-none focus:border-[#e50914]" 
+                                                style={{ backgroundColor: isLight ? '#f8fafc' : '#1c1c1c', borderColor: borderCol, color: textMain }} 
+                                            />
+                                        </div>
+                                    </div>
+
+                                    <div>
+                                        <label className="block text-[11px] mb-1.5 text-gray-400">อุปกรณ์</label>
+                                        <select 
+                                            value={custDevice} 
+                                            onChange={e => setCustDevice(e.target.value)} 
+                                            className="w-full border rounded-xl px-3.5 py-2.5 text-xs outline-none focus:border-[#e50914]" 
+                                            style={{ backgroundColor: isLight ? '#f8fafc' : '#1c1c1c', borderColor: borderCol, color: textMain }}
+                                        >
+                                            <option value="มือถือ">มือถือ</option>
+                                            <option value="ไอแพด">ไอแพด</option>
+                                            <option value="คอมพิวเตอร์">คอมพิวเตอร์</option>
+                                            <option value="Smart TV">Smart TV</option>
+                                        </select>
+                                    </div>
+
+                                    <div>
+                                        <label className="block text-[11px] mb-1.5 text-gray-400">ระยะเวลา</label>
+                                        <select 
+                                            value={custDuration} 
+                                            onChange={e => setCustDuration(e.target.value)} 
+                                            className="w-full border rounded-xl px-3.5 py-2.5 text-xs outline-none focus:border-[#e50914]" 
+                                            style={{ backgroundColor: isLight ? '#f8fafc' : '#1c1c1c', borderColor: borderCol, color: textMain }}
+                                        >
+                                            <option value="1 วัน">1 วัน</option>
+                                            <option value="7 วัน">7 วัน</option>
+                                            <option value="14 วัน">14 วัน</option>
+                                            <option value="30 วัน">30 วัน</option>
+                                        </select>
+                                    </div>
+
+                                    <div>
+                                        <label className="block text-[11px] mb-1.5 text-gray-400">ราคา (บาท) — เว้นว่างเพื่อใช้ราคาอัตโนมัติ</label>
+                                        <input 
+                                            type="number" 
+                                            value={custCustomPrice} 
+                                            onChange={e => setCustCustomPrice(e.target.value)} 
+                                            placeholder={`ราคาอัตโนมัติ ฿${getAutoPrice()}`} 
+                                            className="w-full border rounded-xl px-3.5 py-2.5 text-xs outline-none focus:border-[#e50914]" 
+                                            style={{ backgroundColor: isLight ? '#f8fafc' : '#1c1c1c', borderColor: borderCol, color: textMain }} 
+                                        />
+                                    </div>
+
+                                    <div className="p-3 border rounded-xl flex justify-between items-center" style={{ backgroundColor: isLight ? '#f8fafc' : '#141414', borderColor: borderCol }}>
+                                        <span className="text-[11px] text-gray-400">วันหมดอายุอัตโนมัติ:</span>
+                                        <span className="text-xs font-bold text-amber-400">{calculateExpiry()}</span>
+                                    </div>
+
+                                    <div className="p-4 border rounded-2xl flex justify-between items-center bg-[#141414]" style={{ borderColor: borderCol }}>
+                                        <span className="font-bold text-xs text-white">ราคาที่คิด</span>
+                                        <span className="text-lg font-bold text-emerald-400">฿{finalPrice}</span>
+                                    </div>
+
+                                    <div className="flex justify-end gap-2 pt-2">
+                                        <button type="button" onClick={() => setIsAddCustomerOpen(false)} className="border px-4 py-2.5 rounded-xl text-xs font-semibold" style={{ borderColor: borderCol, color: textMain }}>ยกเลิก</button>
+                                        <button type="submit" className="bg-[#e50914] hover:bg-[#b80710] text-white px-6 py-2.5 rounded-xl text-xs font-semibold shadow">บันทึกรายการ</button>
+                                    </div>
+                                </form>
+                            </div>
+                        </div>
+                    )}
+
+                </div>
+            );
+        }
+
+        ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+    </script>
+</body>
+</html>
